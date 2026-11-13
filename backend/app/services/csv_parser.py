@@ -56,43 +56,6 @@ COLUMN_UNIT_HINTS: dict[str, str] = {
     "energie_kwh": "kWh",
 }
 
-# Best-effort fluid type guess from free-text labels (normalized: lower-case,
-# accents stripped) when a file has no explicit "fluide" column — e.g. a
-# meter identified only by the label "Index Gaz 1" is clearly a gas meter
-# even though nothing in the file structurally says so.
-FLUID_KEYWORDS: dict[str, str] = {
-    "gaz": "gaz",
-    "gas": "gaz",
-    "elec": "électricité",
-    "electrique": "électricité",
-    "electricite": "électricité",
-    "eau": "eau",
-    "water": "eau",
-    "chaleur": "chaleur",
-    "cad": "chaleur",
-    "heat": "chaleur",
-    "mazout": "mazout",
-    "fioul": "mazout",
-    "fuel": "mazout",
-    "granule": "granulés",
-    "granules": "granulés",
-    "pellet": "granulés",
-    "pellets": "granulés",
-    "vapeur": "vapeur",
-    "steam": "vapeur",
-}
-
-
-def _infer_fluid_type(*texts: str | None) -> str | None:
-    for text in texts:
-        if not text:
-            continue
-        for token in _norm(text).split("_"):
-            if token in FLUID_KEYWORDS:
-                return FLUID_KEYWORDS[token]
-    return None
-
-
 def _norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "_", s.strip().lower()).strip("_")
@@ -256,8 +219,6 @@ def parse_csv_bytes(
         if "fluide" in mapping:
             vals = g[mapping["fluide"]].dropna()
             fluid_type = vals.iloc[0].strip() if len(vals) else None
-        if not fluid_type:
-            fluid_type = _infer_fluid_type(meter_code, Path(filename).stem)
 
         role = None
         if "mesure" in mapping:

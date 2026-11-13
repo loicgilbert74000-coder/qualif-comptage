@@ -45,10 +45,11 @@ def test_parse_csv_bytes_accepts_label_column_as_meter_identifier():
     # meter should fall back to the same building, named after the file.
     assert {s.building_code for s in result.series} == {"releves-manuels"}
     # No "fluide" column either, but the fluid is obvious from the label
-    # itself: it should not be left as "inconnu".
+    # itself (via app.services.meter_classifier): it should not be left as
+    # "inconnu".
     by_code = {s.meter_code: s.fluid_type for s in result.series}
     assert by_code["Index Gaz 1"] == "gaz"
-    assert by_code["Index Mazout 1"] == "mazout"
+    assert by_code["Index Mazout 1"] == "fuel"
 
 
 def test_parse_csv_bytes_falls_back_to_filename_when_no_identifier_column():
