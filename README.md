@@ -54,9 +54,20 @@ Node, pas de PostgreSQL) : les données sont stockées dans une base SQLite
 locale, sous le profil de l'utilisateur
 (`%LOCALAPPDATA%\QualifComptage` sur Windows).
 
-Double-clique sur `QualifComptage.exe` : un serveur local démarre et le
-navigateur par défaut s'ouvre automatiquement sur l'application. Fermer la
-fenêtre de la console arrête l'application.
+Double-clique sur `QualifComptage-Windows-<version>.exe` : une fenêtre
+d'application native s'ouvre (via [pywebview](https://pywebview.flowrl.com/),
+sans barre d'adresse de navigateur), pendant qu'un petit serveur tourne en
+arrière-plan sur ta machine. Fermer la fenêtre arrête l'application.
+
+Sur Windows 10/11 récents, le moteur d'affichage (WebView2) est déjà
+installé par défaut. Sur un Windows plus ancien ou sans WebView2, l'appli se
+rabat automatiquement sur ton navigateur par défaut (comportement identique
+à l'ancienne version). En cas de souci au démarrage, un journal est écrit
+dans `%LOCALAPPDATA%\QualifComptage\app.log` — à consulter ou à transmettre
+pour diagnostic.
+
+La version exacte du build est visible en bas de la barre latérale de
+l'application, et dans le nom du fichier téléchargé.
 
 Télécharge le dernier exécutable depuis l'onglet **Actions** du dépôt
 (artefact `QualifComptage-Windows` ou `QualifComptage-Linux` du dernier run

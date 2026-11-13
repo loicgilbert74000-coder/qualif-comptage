@@ -63,6 +63,11 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Install the native desktop window (Windows only)
+        if: runner.os == 'Windows'
+        working-directory: backend
+        run: pip install pywebview pythonnet pywin32
+
       - name: Stamp this build with a version
         shell: bash
         run: |
@@ -75,13 +80,30 @@ jobs:
         shell: bash
         run: |
           SEP=";"
-          if [ "${{ runner.os }}" != "Windows" ]; then SEP=":"; fi
+          EXTRA_ARGS=()
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # pywebview on Windows needs pythonnet/clr_loader (to drive the
+            # EdgeChromium or legacy MSHTML backend) and its own bundled
+            # WebView2 loader DLLs, which PyInstaller's static analysis
+            # won't find on its own.
+            EXTRA_ARGS=(
+              --collect-all webview
+              --collect-all clr_loader
+              --collect-all pythonnet
+              --hidden-import clr
+              --hidden-import win32gui
+              --hidden-import win32con
+            )
+          else
+            SEP=":"
+          fi
           pyinstaller --onefile --name QualifComptage \
             --add-data "frontend_dist${SEP}frontend_dist" \
             --collect-all pandas \
             --collect-all numpy \
             --collect-submodules uvicorn \
             --hidden-import multipart \
+            "${EXTRA_ARGS[@]}" \
             desktop_main.py
 
       - name: Rename artifact per OS+version and upload to the release
