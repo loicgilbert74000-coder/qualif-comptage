@@ -6,7 +6,7 @@ import { api } from "../api/client";
 import type { ImportBatchDetail, AnomalyOut, SeriesPoint, SynthesisOut } from "../types";
 import QualityChart from "./QualityChart";
 import QualityBar from "./QualityBar";
-import ProgressBar from "./ProgressBar";
+import LoadingOverlay from "./LoadingOverlay";
 
 type Tab = "graphique" | "tableau" | "anomalies" | "manquantes" | "synthese";
 
@@ -88,6 +88,7 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
 
   return (
     <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+      {busy === "reanalyze" && <LoadingOverlay label="Réanalyse du fichier en cours…" />}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-6 py-4">
         <div>
           <h2 className="text-base font-semibold text-gray-900">Analyse détaillée : {summary.name}</h2>
@@ -186,47 +187,6 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
                   />
                 </div>
               )}
-
-              <h3 className="mb-2 mt-5 text-sm font-semibold text-gray-900">Détail des anomalies</h3>
-              <div className="overflow-hidden rounded-lg border border-gray-200">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-gray-50 text-gray-500">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">Période</th>
-                      <th className="px-3 py-2 font-medium">Type</th>
-                      <th className="px-3 py-2 font-medium">Description</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {meterAnomalies.length === 0 && (
-                      <tr>
-                        <td colSpan={3} className="px-3 py-3 text-center text-gray-400">
-                          Aucune anomalie détectée
-                        </td>
-                      </tr>
-                    )}
-                    {meterAnomalies.map((a) => (
-                      <tr key={a.id}>
-                        <td className="whitespace-nowrap px-3 py-2 text-gray-700">
-                          {new Date(a.period_start).toLocaleDateString("fr-CH")}
-                          {a.period_start !== a.period_end && ` – ${new Date(a.period_end).toLocaleDateString("fr-CH")}`}
-                        </td>
-                        <td className="px-3 py-2">
-                          <span
-                            className={clsx(
-                              "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                              a.type === "incoherence" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"
-                            )}
-                          >
-                            {a.type === "incoherence" ? "Incohérence" : "Manquante"}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 text-gray-600">{a.description}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </div>
           </div>
         )}
@@ -298,7 +258,6 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
       </div>
 
       <div className="border-t border-gray-100 bg-gray-50 px-6 py-4">
-        {busy === "reanalyze" && <ProgressBar label="Réanalyse en cours…" className="mb-3" />}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="flex items-center gap-2 text-sm text-gray-500">
             <InfoIcon className="h-4 w-4 shrink-0 text-gray-400" />

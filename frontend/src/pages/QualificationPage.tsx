@@ -5,13 +5,13 @@ import StepIndicator from "../components/StepIndicator";
 import StatusBadge from "../components/StatusBadge";
 import QualityBar from "../components/QualityBar";
 import ProgressBar from "../components/ProgressBar";
+import LoadingOverlay from "../components/LoadingOverlay";
 import DetailedAnalysis from "../components/DetailedAnalysis";
 import { api } from "../api/client";
 import type { ImportBatchSummary, ImportBatchDetail } from "../types";
 
 export default function QualificationPage() {
   const [imports, setImports] = useState<ImportBatchSummary[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ImportBatchDetail | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -61,24 +61,11 @@ export default function QualificationPage() {
     }
   }
 
-  function toggleSelect(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-    // Selecting a file shows its curve straight away, instead of requiring
-    // a second click on the row itself.
-    setActiveId(id);
-  }
-
-  async function reanalyzeSelection() {
+  async function reanalyzeAll() {
     setReanalyzing(true);
     try {
-      const ids = selectedIds.size > 0 ? Array.from(selectedIds) : imports.map((i) => i.id);
-      for (const id of ids) {
-        await api.reanalyze(id);
+      for (const b of imports) {
+        await api.reanalyze(b.id);
       }
       await refreshActive();
     } finally {
@@ -93,22 +80,11 @@ export default function QualificationPage() {
     try {
       await api.deleteImport(id);
       if (activeId === id) setActiveId(null);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
       await refreshList();
     } catch (e) {
       setError((e as Error).message);
     }
   }
-
-  const selectedBatches = imports.filter((i) => selectedIds.has(i.id));
-  const avgQuality =
-    selectedBatches.length > 0
-      ? selectedBatches.reduce((s, b) => s + (b.quality_score ?? 0), 0) / selectedBatches.length
-      : null;
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-y-auto">
@@ -117,6 +93,8 @@ export default function QualificationPage() {
         subtitle="Contrôle, qualification et préparation des données de compteurs de tout type (électricité, gaz, eau, chaleur, mazout, granulés…)"
       />
       <StepIndicator current={detail ? 2 : 1} />
+
+      {reanalyzing && <LoadingOverlay label="Réanalyse de tous les fichiers en cours…" />}
 
       <div className="flex-1 px-8 pb-6">
         <div className="flex flex-col gap-4">
@@ -175,21 +153,19 @@ export default function QualificationPage() {
                 Fichiers importés et analysés ({imports.length})
               </h2>
               <button
-                onClick={reanalyzeSelection}
+                onClick={reanalyzeAll}
                 disabled={reanalyzing}
                 className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               >
                 ⟳ Tout réanalyser
               </button>
             </div>
-            {reanalyzing && <ProgressBar label="Réanalyse en cours…" className="mb-3" />}
 
             <div className="overflow-hidden rounded-lg border border-gray-200">
               <div className="max-h-[172px] overflow-y-auto">
                 <table className="w-full text-left text-sm">
                   <thead className="sticky top-0 z-10 bg-gray-50 text-gray-500">
                     <tr>
-                      <th className="w-8 px-3 py-2"></th>
                       <th className="px-3 py-2 font-medium">Fichier / Dossier</th>
                       <th className="px-3 py-2 font-medium">Bâtiments</th>
                       <th className="px-3 py-2 font-medium">Compteurs</th>
@@ -202,7 +178,7 @@ export default function QualificationPage() {
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {imports.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
+                        <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
                           Aucun fichier importé pour l'instant.
                         </td>
                       </tr>
@@ -213,13 +189,6 @@ export default function QualificationPage() {
                         className={`cursor-pointer hover:bg-gray-50 ${activeId === b.id ? "bg-geneva-50" : ""}`}
                         onClick={() => setActiveId(b.id)}
                       >
-                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(b.id)}
-                            onChange={() => toggleSelect(b.id)}
-                          />
-                        </td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2 font-medium text-gray-800">
                             {b.kind === "dossier" ? <FolderIcon className="h-4 w-4 text-gray-400" /> : <FileIcon className="h-4 w-4 text-gray-400" />}
@@ -262,15 +231,6 @@ export default function QualificationPage() {
                 {imports.length} fichiers — faites défiler la liste pour voir les suivants, ou supprimez les fichiers en trop.
               </p>
             )}
-
-            <div className="mt-3 flex items-center justify-between text-sm text-gray-500">
-              <span>{selectedIds.size} fichier(s) sélectionné(s)</span>
-              {avgQuality !== null && (
-                <span>
-                  Qualité moyenne (sélection) : <strong className="text-gray-700">{avgQuality.toFixed(1)} %</strong>
-                </span>
-              )}
-            </div>
           </section>
 
           {detail && <DetailedAnalysis detail={detail} onAction={refreshActive} />}

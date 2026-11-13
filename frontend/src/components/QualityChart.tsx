@@ -76,7 +76,7 @@ export default function QualityChart({ points, unit, granularity }: Props) {
     setRange([0, lastIndex]);
   }
 
-  // Attached as a native, non-passive listener (rather than React's onWheel)
+  // Attached as native, non-passive listeners (rather than React's onWheel)
   // so preventDefault() reliably stops the browser from also scrolling the
   // page underneath the chart — with a passive listener (which some browsers
   // default to for wheel events) preventDefault is silently ignored and the
@@ -85,6 +85,23 @@ export default function QualityChart({ points, unit, granularity }: Props) {
   useEffect(() => {
     pointsLengthRef.current = points.length;
   }, [points]);
+
+  const rangeRef = useRef(range);
+  useEffect(() => {
+    rangeRef.current = range;
+  }, [range]);
+
+  // Drag-to-zoom with the right mouse button held down: [startFraction,
+  // currentFraction] of the plot area, only set while actively dragging —
+  // used both to apply the zoom on release and to draw the selection box.
+  const dragStateRef = useRef<{ rect: DOMRect; startFrac: number } | null>(null);
+  const [dragVisual, setDragVisual] = useState<[number, number] | null>(null);
+
+  function fracFromClientX(clientX: number, rect: DOMRect) {
+    const usableWidth = Math.max(rect.width - CHART_MARGIN.left - CHART_MARGIN.right, 1);
+    const f = (clientX - rect.left - CHART_MARGIN.left) / usableWidth;
+    return Math.min(1, Math.max(0, f));
+  }
 
   useEffect(() => {
     const el = containerRef.current;
@@ -97,9 +114,7 @@ export default function QualityChart({ points, unit, granularity }: Props) {
       e.stopPropagation();
 
       const rect = el!.getBoundingClientRect();
-      const usableWidth = Math.max(rect.width - CHART_MARGIN.left - CHART_MARGIN.right, 1);
-      let frac = (e.clientX - rect.left - CHART_MARGIN.left) / usableWidth;
-      frac = Math.min(1, Math.max(0, frac));
+      const frac = fracFromClientX(e.clientX, rect);
 
       // Wheel up (deltaY < 0) zooms in by shrinking the visible span; wheel
       // down zooms back out, centered under the cursor either way.
@@ -124,14 +139,94 @@ export default function QualityChart({ points, unit, granularity }: Props) {
       });
     }
 
+    // The right mouse button is repurposed for drag-to-zoom below, so its
+    // usual context menu would just get in the way here.
+    function onContextMenu(e: globalThis.MouseEvent) {
+      e.preventDefault();
+    }
+
+    function onMouseDown(e: globalThis.MouseEvent) {
+      if (e.button !== 2) return; // right button only
+      e.preventDefault();
+      const rect = el!.getBoundingClientRect();
+      const startFrac = fracFromClientX(e.clientX, rect);
+      dragStateRef.current = { rect, startFrac };
+      setDragVisual([startFrac, startFrac]);
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    }
+
+    function onMouseMove(e: globalThis.MouseEvent) {
+      const drag = dragStateRef.current;
+      if (!drag) return;
+      setDragVisual([drag.startFrac, fracFromClientX(e.clientX, drag.rect)]);
+    }
+
+    function onMouseUp(e: globalThis.MouseEvent) {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      const drag = dragStateRef.current;
+      dragStateRef.current = null;
+      setDragVisual(null);
+      if (!drag) return;
+
+      const endFrac = fracFromClientX(e.clientX, drag.rect);
+      const lo = Math.min(drag.startFrac, endFrac);
+      const hi = Math.max(drag.startFrac, endFrac);
+      if (hi - lo < 0.02) return; // a plain right-click, not a drag: ignore
+
+      const lastIdx = Math.max(pointsLengthRef.current - 1, 0);
+      const [s, en] = rangeRef.current;
+      const span = en - s;
+      let newStart = Math.round(s + lo * span);
+      let newEnd = Math.round(s + hi * span);
+      if (newEnd - newStart < MIN_VISIBLE_POINTS - 1) {
+        const mid = (newStart + newEnd) / 2;
+        newStart = Math.round(mid - (MIN_VISIBLE_POINTS - 1) / 2);
+        newEnd = newStart + (MIN_VISIBLE_POINTS - 1);
+      }
+      newStart = Math.max(0, newStart);
+      newEnd = Math.min(lastIdx, newEnd);
+      setRange([newStart, newEnd]);
+    }
+
+    function onDoubleClick() {
+      setRange([0, Math.max(pointsLengthRef.current - 1, 0)]);
+    }
+
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    el.addEventListener("contextmenu", onContextMenu);
+    el.addEventListener("mousedown", onMouseDown);
+    el.addEventListener("dblclick", onDoubleClick);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("contextmenu", onContextMenu);
+      el.removeEventListener("mousedown", onMouseDown);
+      el.removeEventListener("dblclick", onDoubleClick);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
   }, []);
+
+  const dragBoxStyle = useMemo(() => {
+    if (!dragVisual || !dragStateRef.current) return null;
+    const { rect } = dragStateRef.current;
+    const usableWidth = Math.max(rect.width - CHART_MARGIN.left - CHART_MARGIN.right, 1);
+    const lo = Math.min(dragVisual[0], dragVisual[1]);
+    const hi = Math.max(dragVisual[0], dragVisual[1]);
+    return {
+      left: `${CHART_MARGIN.left + lo * usableWidth}px`,
+      width: `${(hi - lo) * usableWidth}px`,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragVisual]);
 
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between">
-        <p className="text-xs text-gray-400">Molette de la souris pour zoomer sur la courbe</p>
+        <p className="text-xs text-gray-400">
+          Molette pour zoomer · clic droit maintenu pour sélectionner une zone · double-clic pour réinitialiser
+        </p>
         {isZoomed && (
           <button
             onClick={resetZoom}
@@ -143,9 +238,15 @@ export default function QualityChart({ points, unit, granularity }: Props) {
       </div>
       <div
         ref={containerRef}
-        className="h-80 w-full select-none"
+        className="relative h-80 w-full select-none"
         style={{ touchAction: "none", overscrollBehavior: "contain" }}
       >
+        {dragBoxStyle && (
+          <div
+            className="pointer-events-none absolute inset-y-0 z-10 border-x-2 border-geneva-600 bg-geneva-600/10"
+            style={dragBoxStyle}
+          />
+        )}
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={CHART_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#eef0f3" />
