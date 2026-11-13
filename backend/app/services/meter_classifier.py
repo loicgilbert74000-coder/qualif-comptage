@@ -22,6 +22,7 @@ class MeterClassification:
     fluid_type: str | None
     role: str | None
     unit: str | None
+    measurement_kind: str
 
 
 def classify_meter(
@@ -32,6 +33,7 @@ def classify_meter(
     role: str | None = None,
     unit: str | None = None,
     value_column: str | None = None,
+    measurement_label: str | None = None,
 ) -> MeterClassification:
     """Return canonical fluid, usage role and unit for a parsed meter.
 
@@ -43,6 +45,7 @@ def classify_meter(
     source = _norm(filename)
     raw_fluid = _norm(fluid_type)
     raw_role = _norm(role)
+    raw_measurement = _norm(measurement_label)
     raw_unit = (unit or "").strip() or None
     value_name = _norm(value_column)
     clues = " ".join((raw_fluid, raw_role, code, source, value_name))
@@ -62,6 +65,22 @@ def classify_meter(
     is_injection = "inj" in code_tokens or "injection" in clues
     is_pac = "pac" in code_tokens or "pompe a chaleur" in clues
     is_delivery = bool(tokens & {"livraison", "livraisons", "livre", "livree", "livrees"})
+    is_stock_level = "jauge" in tokens or "niveau de stock" in clues or "niveau citerne" in clues
+
+    if is_stock_level:
+        measurement_kind = "niveau_stock"
+    elif is_delivery:
+        measurement_kind = "livraison"
+    elif "index" in value_name.split() or "index" in raw_measurement.split() or raw_measurement.startswith("index "):
+        measurement_kind = "index"
+    elif any(marker in value_name for marker in ("consommation", "variation", "volume m3", "energie kwh", "kwh")):
+        measurement_kind = "consommation"
+    elif "valeur acquisition" in value_name and "sig horaire" in source:
+        measurement_kind = "consommation"
+    elif any(marker in raw_measurement for marker in ("consommation", "releve intervalle", "energie periode")):
+        measurement_kind = "consommation"
+    else:
+        measurement_kind = "indéterminé"
 
     if is_ecs:
         canonical_fluid = "ECS"
@@ -117,10 +136,14 @@ def classify_meter(
         canonical_role = None
 
     inferred_unit = raw_unit
-    if not inferred_unit:
-        if value_name in {"energie kwh", "energie", "kwh"}:
+    if value_name == "valeur acquisition" and "cas2 gaz sig horaire" in source:
+        # In this source export, the displayed unit is wrong: the README
+        # documents the acquired value as m³ and the converted variation as kWh.
+        inferred_unit = "m³"
+    elif not inferred_unit:
+        if value_name in {"energie kwh", "energie", "kwh", "consommation kwh", "variation kwh"}:
             inferred_unit = "kWh"
         elif value_name in {"volume m3", "volume m 3"}:
             inferred_unit = "m³"
 
-    return MeterClassification(canonical_fluid, canonical_role, inferred_unit)
+    return MeterClassification(canonical_fluid, canonical_role, inferred_unit, measurement_kind)

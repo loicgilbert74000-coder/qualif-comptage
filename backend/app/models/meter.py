@@ -22,6 +22,7 @@ class Meter(Base):
     fluid_type: Mapped[str] = mapped_column(String(64))       # électricité, gaz, eau, chaleur, mazout, ...
     unit: Mapped[str] = mapped_column(String(32))              # kWh, m3, litre, kg, ...
     role: Mapped[str] = mapped_column(String(64), default="général")  # général, sous-compteur, production, livraison, injection
+    measurement_kind: Mapped[str] = mapped_column(String(24), default="indéterminé", server_default="indéterminé")
     parent_meter_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("meters.id", ondelete="SET NULL"), nullable=True
     )

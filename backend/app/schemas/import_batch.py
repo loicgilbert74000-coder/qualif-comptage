@@ -26,6 +26,7 @@ class MeterQualitySummary(BaseModel):
     meter_code: str
     fluid_type: str
     role: str
+    measurement_kind: str
     unit: str
     granularity: str
     total_expected: int

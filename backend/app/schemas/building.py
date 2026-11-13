@@ -10,6 +10,7 @@ class MeterOut(BaseModel):
     fluid_type: str
     unit: str
     role: str
+    measurement_kind: str
     parent_meter_id: UUID | None
 
     class Config:

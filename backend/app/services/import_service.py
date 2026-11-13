@@ -60,6 +60,7 @@ def _get_or_create_meter(db: Session, building: Building, parsed) -> Meter:
             fluid_type=parsed.fluid_type or "inconnu",
             unit=parsed.unit or "unité",
             role=parsed.role or "général",
+            measurement_kind=parsed.measurement_kind,
         )
         db.add(m)
         db.flush()
@@ -69,6 +70,8 @@ def _get_or_create_meter(db: Session, building: Building, parsed) -> Meter:
         m.fluid_type = parsed.fluid_type or m.fluid_type
         m.unit = parsed.unit or m.unit
         m.role = parsed.role or m.role
+        if parsed.measurement_kind != "indéterminé":
+            m.measurement_kind = parsed.measurement_kind
     return m
 
 
