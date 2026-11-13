@@ -22,6 +22,7 @@ export interface MeterQualitySummary {
   meter_id: string;
   meter_code: string;
   fluid_type: string;
+  role: string;
   unit: string;
   granularity: Granularity;
   total_expected: number;

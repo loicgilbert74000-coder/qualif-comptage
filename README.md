@@ -44,6 +44,20 @@ Le modèle de données ne code en dur aucun type de fluide : `fluid_type`,
 partir du fichier importé (ou déduits du code du compteur). Un nouveau type
 de compteur n'exige donc aucune modification du schéma ou du code.
 
+À l'import, le classificateur combine les colonnes explicites (`fluide`,
+`mesure`, `unite`), les suffixes d'identifiant et le nom du fichier. Il
+sépare le vecteur (`électricité`, `chaleur`, `froid`, `gaz`, `eau froide`,
+`ECS`, `granulés`, `bois`, `fuel`) du rôle (`consommation`, `production`,
+`injection`, `livraison`, sous-compteur chaud/froid/ECS, CAD ou FAD). Une
+unité seule comme `kWh` ou `m³` ne suffit pas à déterminer le fluide.
+
+Sur les exports Rive-Claire, les identifiants sont notamment interprétés ainsi :
+`*-EL` = soutirage électrique, `*-PV` = production photovoltaïque,
+`*-EL-INJ` = injection électrique, `*-CAD` = chaleur du réseau CAD,
+`*-CH-PAC` = chaleur produite par PAC, `*-GZ` = gaz et `*-EAU` = eau froide.
+Les fichiers d'un même dossier sont détectés séparément, car leurs colonnes de
+date et de valeur peuvent différer (quart d'heure, heure ou jour).
+
 ## Exécutable autonome (sans Docker)
 
 Un pipeline GitHub Actions (`.github/workflows/build-desktop.yml`) construit

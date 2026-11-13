@@ -72,6 +72,7 @@ def get_import(batch_id: UUID, db: Session = Depends(get_db)):
                 meter_id=m.id,
                 meter_code=m.code,
                 fluid_type=m.fluid_type,
+                role=m.role,
                 unit=m.unit,
                 granularity=gran,
                 total_expected=total,
