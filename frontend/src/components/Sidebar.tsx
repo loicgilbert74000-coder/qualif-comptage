@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { to: "/", label: "Qualification des données", icon: IconChart },
   { to: "/historique", label: "Historique des traitements", icon: IconClock },
   { to: "/batiments", label: "Bâtiments & compteurs", icon: IconBuilding },
-  { to: "/parametres", label: "Paramètres", icon: IconGear },
+  { to: "/parametres", label: "Types d'erreurs", icon: IconSearch },
 ];
 
 export default function Sidebar() {
@@ -100,16 +100,12 @@ function IconBuilding({ className }: { className?: string }) {
     </svg>
   );
 }
-function IconGear({ className }: { className?: string }) {
+function IconSearch({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className}>
-      <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-      <path
-        d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.5-2-3.5-2.4.6a7.7 7.7 0 0 0-1.7-1l-.4-2.4h-4l-.4 2.4a7.7 7.7 0 0 0-1.7 1l-2.4-.6-2 3.5 2 1.5a7.6 7.6 0 0 0 0 2l-2 1.5 2 3.5 2.4-.6a7.7 7.7 0 0 0 1.7 1l.4 2.4h4l.4-2.4a7.7 7.7 0 0 0 1.7-1l2.4.6 2-3.5Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
+      <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M19.5 19.5 15 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M10.5 7.5v2M9.5 10.5h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }
