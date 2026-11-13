@@ -5,8 +5,29 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
 jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create or update the "desktop-latest" release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view desktop-latest >/dev/null 2>&1; then
+            gh release edit desktop-latest --target "$GITHUB_SHA" \
+              --notes "Build automatique depuis le commit $GITHUB_SHA"
+          else
+            gh release create desktop-latest --target "$GITHUB_SHA" \
+              --title "Exécutable desktop (dernière version)" \
+              --notes "Build automatique depuis le commit $GITHUB_SHA"
+          fi
+
   build:
+    needs: release
     strategy:
       fail-fast: false
       matrix:
@@ -56,11 +77,17 @@ jobs:
             --hidden-import multipart \
             desktop_main.py
 
-      - name: Upload executable
-        uses: actions/upload-artifact@v4
-        with:
-          name: QualifComptage-${{ runner.os }}
-          path: |
-            backend/dist/QualifComptage.exe
-            backend/dist/QualifComptage
-          if-no-files-found: ignore
+      - name: Rename artifact per OS and upload to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd backend/dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            asset="QualifComptage-Windows.exe"
+            mv QualifComptage.exe "$asset"
+          else
+            asset="QualifComptage-Linux"
+            mv QualifComptage "$asset"
+          fi
+          gh release upload desktop-latest "$asset" --clobber
