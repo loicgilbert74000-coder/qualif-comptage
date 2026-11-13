@@ -143,7 +143,7 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
                   >
                     {meters.map((m) => (
                       <option key={m.meter_id} value={m.meter_id}>
-                        {m.meter_code} ({m.fluid_type})
+                        {m.meter_code} ({m.fluid_type} · {m.role})
                       </option>
                     ))}
                   </select>
@@ -235,6 +235,7 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
                   <tr>
                     <th className="px-4 py-2 font-medium">Compteur</th>
                     <th className="px-4 py-2 font-medium">Fluide</th>
+                    <th className="px-4 py-2 font-medium">Rôle</th>
                     <th className="px-4 py-2 font-medium">Granularité</th>
                     <th className="px-4 py-2 font-medium">Qualité</th>
                   </tr>
@@ -244,6 +245,7 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
                     <tr key={m.meter_id}>
                       <td className="px-4 py-2 font-medium text-gray-800">{m.meter_code}</td>
                       <td className="px-4 py-2 capitalize text-gray-600">{m.fluid_type}</td>
+                      <td className="px-4 py-2 capitalize text-gray-600">{m.role}</td>
                       <td className="px-4 py-2 capitalize text-gray-600">{m.granularity}</td>
                       <td className="px-4 py-2">
                         <QualityBar value={m.quality_pct} />

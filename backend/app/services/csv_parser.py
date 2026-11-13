@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
+from app.services.meter_classifier import classify_meter
 
 # Header variants we recognise out of the box, lower-cased & accent-stripped,
 # ORDERED BY PREFERENCE (first = best match) when several columns of a file
@@ -232,13 +233,22 @@ def parse_csv_bytes(
         if not unit:
             unit = COLUMN_UNIT_HINTS.get(_norm(mapping["valeur"]))
 
+        classification = classify_meter(
+            meter_code=meter_code,
+            filename=filename,
+            fluid_type=fluid_type,
+            role=role,
+            unit=unit,
+            value_column=mapping["valeur"],
+        )
+
         series.append(
             ParsedSeries(
                 meter_code=meter_code,
                 building_code=building_code,
-                fluid_type=fluid_type,
-                role=role,
-                unit=unit,
+                fluid_type=classification.fluid_type or fluid_type,
+                role=classification.role or role,
+                unit=classification.unit or unit,
                 rows=rows.reset_index(drop=True),
             )
         )

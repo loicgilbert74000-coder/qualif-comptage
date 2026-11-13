@@ -63,6 +63,12 @@ def _get_or_create_meter(db: Session, building: Building, parsed) -> Meter:
         )
         db.add(m)
         db.flush()
+    else:
+        # Imports may provide better metadata than the first file seen for a
+        # meter (for example an explicit fluid column after an ID-only file).
+        m.fluid_type = parsed.fluid_type or m.fluid_type
+        m.unit = parsed.unit or m.unit
+        m.role = parsed.role or m.role
     return m
 
 
@@ -100,7 +106,7 @@ def ingest_files(
     db.flush()
 
     all_warnings: list[str] = []
-    used_mapping = column_mapping
+    mappings_by_file: dict[str, dict[str, str]] = {}
     buildings_seen: set[str] = set()
     meters_seen: set[str] = set()
     period_min, period_max = None, None
@@ -110,9 +116,9 @@ def ingest_files(
             fh.write(content)
 
         result: ParseResult = parse_csv_bytes(
-            content, filename, column_mapping=used_mapping, delimiter=delimiter, decimal_separator=decimal_separator
+            content, filename, column_mapping=column_mapping, delimiter=delimiter, decimal_separator=decimal_separator
         )
-        used_mapping = used_mapping or result.column_mapping
+        mappings_by_file[filename] = result.column_mapping
         all_warnings.extend(result.warnings)
 
         for s in result.series:
@@ -139,7 +145,14 @@ def ingest_files(
                     )
                 )
 
-    batch.column_mapping = used_mapping or {}
+    if column_mapping:
+        batch.column_mapping = column_mapping
+    elif len(mappings_by_file) == 1:
+        batch.column_mapping = next(iter(mappings_by_file.values()))
+    else:
+        # A folder may mix daily, hourly and quarter-hourly exports with
+        # different date/value headers; retain the detected mapping per file.
+        batch.column_mapping = {"files": mappings_by_file}
     batch.building_count = len(buildings_seen)
     batch.meter_count = len(meters_seen)
     batch.period_start = period_min.date() if period_min is not None else None
