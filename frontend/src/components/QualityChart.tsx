@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { WheelEvent } from "react";
 import {
   ComposedChart,
   Line,
@@ -77,44 +76,57 @@ export default function QualityChart({ points, unit, granularity }: Props) {
     setRange([0, lastIndex]);
   }
 
-  function handleWheel(e: WheelEvent<HTMLDivElement>) {
-    if (lastIndex < MIN_VISIBLE_POINTS - 1) return; // not enough points to zoom usefully
-    e.preventDefault();
+  // Attached as a native, non-passive listener (rather than React's onWheel)
+  // so preventDefault() reliably stops the browser from also scrolling the
+  // page underneath the chart — with a passive listener (which some browsers
+  // default to for wheel events) preventDefault is silently ignored and the
+  // whole page jumps up while the chart zooms.
+  const pointsLengthRef = useRef(points.length);
+  useEffect(() => {
+    pointsLengthRef.current = points.length;
+  }, [points]);
 
-    const span = end - start;
-    const rect = containerRef.current?.getBoundingClientRect();
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
 
-    // Map the cursor's x position onto the visible index range, so the
-    // zoom stays centered under the mouse rather than snapping to a side.
-    let frac = 0.5;
-    if (rect) {
-      const usableLeft = CHART_MARGIN.left;
+    function onWheel(e: globalThis.WheelEvent) {
+      const lastIdx = Math.max(pointsLengthRef.current - 1, 0);
+      if (lastIdx < MIN_VISIBLE_POINTS - 1) return; // not enough points to zoom usefully
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rect = el!.getBoundingClientRect();
       const usableWidth = Math.max(rect.width - CHART_MARGIN.left - CHART_MARGIN.right, 1);
-      frac = (e.clientX - rect.left - usableLeft) / usableWidth;
+      let frac = (e.clientX - rect.left - CHART_MARGIN.left) / usableWidth;
       frac = Math.min(1, Math.max(0, frac));
-    }
-    const centerIndex = start + frac * span;
 
-    // Wheel up (deltaY < 0) zooms in by shrinking the visible span; wheel
-    // down zooms back out. Clamp so it can neither over-zoom past a handful
-    // of points nor expand past the full series.
-    const zoomFactor = e.deltaY < 0 ? 0.8 : 1.25;
-    const newSpan = Math.min(lastIndex, Math.max(MIN_VISIBLE_POINTS - 1, span * zoomFactor));
+      // Wheel up (deltaY < 0) zooms in by shrinking the visible span; wheel
+      // down zooms back out, centered under the cursor either way.
+      const zoomFactor = e.deltaY < 0 ? 0.8 : 1.25;
 
-    let newStart = Math.round(centerIndex - frac * newSpan);
-    let newEnd = Math.round(newStart + newSpan);
-    if (newStart < 0) {
-      newEnd -= newStart;
-      newStart = 0;
+      setRange(([s, en]) => {
+        const span = en - s;
+        const centerIndex = s + frac * span;
+        const newSpan = Math.min(lastIdx, Math.max(MIN_VISIBLE_POINTS - 1, span * zoomFactor));
+        let newStart = Math.round(centerIndex - frac * newSpan);
+        let newEnd = Math.round(newStart + newSpan);
+        if (newStart < 0) {
+          newEnd -= newStart;
+          newStart = 0;
+        }
+        if (newEnd > lastIdx) {
+          newStart -= newEnd - lastIdx;
+          newEnd = lastIdx;
+        }
+        newStart = Math.max(0, newStart);
+        return [newStart, newEnd];
+      });
     }
-    if (newEnd > lastIndex) {
-      newStart -= newEnd - lastIndex;
-      newEnd = lastIndex;
-    }
-    newStart = Math.max(0, newStart);
 
-    setRange([newStart, newEnd]);
-  }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   return (
     <div>
@@ -129,7 +141,11 @@ export default function QualityChart({ points, unit, granularity }: Props) {
           </button>
         )}
       </div>
-      <div ref={containerRef} onWheel={handleWheel} className="h-80 w-full select-none">
+      <div
+        ref={containerRef}
+        className="h-80 w-full select-none"
+        style={{ touchAction: "none", overscrollBehavior: "contain" }}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={CHART_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#eef0f3" />

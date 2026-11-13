@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 
+// Pas d'entrée de menu pour "Traitements & reconstructions" : cette étape
+// se déclenche depuis le flux de qualification (après validation du
+// fichier à l'étape 1), pas depuis un lien permanent de la barre latérale.
+// La route /traitements reste active, seule l'entrée de menu disparaît.
 const NAV_ITEMS = [
   { to: "/", label: "Qualification des données", icon: IconChart },
-  { to: "/traitements", label: "Traitements & reconstructions", icon: IconLayers },
   { to: "/historique", label: "Historique des traitements", icon: IconClock },
   { to: "/batiments", label: "Bâtiments & compteurs", icon: IconBuilding },
   { to: "/parametres", label: "Paramètres", icon: IconGear },
@@ -77,14 +80,6 @@ function IconChart({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className}>
       <path d="M4 19V5M4 19h16M8 15v-4M12 15V8m4 7v-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function IconLayers({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className}>
-      <path d="M12 3l9 5-9 5-9-5 9-5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-      <path d="M3 13l9 5 9-5M3 17l9 5 9-5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
     </svg>
   );
 }

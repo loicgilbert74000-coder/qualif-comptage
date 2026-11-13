@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { api } from "../api/client";
 import type { ImportBatchDetail, AnomalyOut, SeriesPoint, SynthesisOut } from "../types";
 import QualityChart from "./QualityChart";
 import QualityBar from "./QualityBar";
+import ProgressBar from "./ProgressBar";
 
 type Tab = "graphique" | "tableau" | "anomalies" | "manquantes" | "synthese";
 
@@ -18,10 +20,11 @@ const TABS: { id: Tab; label: (counts: { anomalies: number; missing: number }) =
 
 interface Props {
   detail: ImportBatchDetail;
-  onAction: () => void; // refresh parent list after reanalyze/reject/validate
+  onAction: () => void; // refresh parent list after reanalyze/reject
 }
 
 export default function DetailedAnalysis({ detail, onAction }: Props) {
+  const navigate = useNavigate();
   const { summary, meters, building_name } = detail;
   const [tab, setTab] = useState<Tab>("graphique");
   const [selectedMeterId, setSelectedMeterId] = useState(meters[0]?.meter_id ?? "");
@@ -58,18 +61,25 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
   const incoherences = meterAnomalies.filter((a) => a.type === "incoherence");
   const missing = meterAnomalies.filter((a) => a.type === "manquante");
 
-  async function handle(action: "reanalyze" | "reject" | "validate") {
+  async function handle(action: "reanalyze" | "reject") {
     setBusy(action);
     try {
       if (action === "reanalyze") await api.reanalyze(summary.id);
       if (action === "reject") await api.reject(summary.id);
-      if (action === "validate") await api.validate(summary.id);
       onAction();
     } catch (e) {
       alert((e as Error).message);
     } finally {
       setBusy(null);
     }
+  }
+
+  // The actual validation + simulation-based reconstruction happens on the
+  // "Traiter et reconstruire" page (step 2) — this just hands the file over
+  // to it; it's already listed there since quality analysis already gave it
+  // the "à valider"/"à corriger" status.
+  function goToTraitement() {
+    navigate("/traitements");
   }
 
   function formatPeriod(p: string | null) {
@@ -287,22 +297,25 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50 px-6 py-4">
-        <p className="flex items-center gap-2 text-sm text-gray-500">
-          <InfoIcon className="h-4 w-4 shrink-0 text-gray-400" />
-          Validez le fichier pour lancer le traitement et la reconstruction des données (comblement des manquants,
-          lissage des incohérences).
-        </p>
-        <div className="flex gap-2">
-          <ActionButton onClick={() => handle("reanalyze")} busy={busy === "reanalyze"} variant="ghost">
-            Réanalyser
-          </ActionButton>
-          <ActionButton onClick={() => handle("reject")} busy={busy === "reject"} variant="danger">
-            Refuser le fichier
-          </ActionButton>
-          <ActionButton onClick={() => handle("validate")} busy={busy === "validate"} variant="primary">
-            Valider et traiter (avec reconstruction)
-          </ActionButton>
+      <div className="border-t border-gray-100 bg-gray-50 px-6 py-4">
+        {busy === "reanalyze" && <ProgressBar label="Réanalyse en cours…" className="mb-3" />}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="flex items-center gap-2 text-sm text-gray-500">
+            <InfoIcon className="h-4 w-4 shrink-0 text-gray-400" />
+            Une fois la qualification satisfaisante, passez à l'étape « Traiter et reconstruire » pour combler les
+            valeurs manquantes et lisser les incohérences par simulation.
+          </p>
+          <div className="flex gap-2">
+            <ActionButton onClick={() => handle("reanalyze")} busy={busy === "reanalyze"} variant="ghost">
+              Réanalyser
+            </ActionButton>
+            <ActionButton onClick={() => handle("reject")} busy={busy === "reject"} variant="danger">
+              Refuser le fichier
+            </ActionButton>
+            <ActionButton onClick={goToTraitement} busy={false} variant="primary">
+              Passer au traitement →
+            </ActionButton>
+          </div>
         </div>
       </div>
     </div>
