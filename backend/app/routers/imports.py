@@ -163,3 +163,10 @@ def validate(batch_id: UUID, db: Session = Depends(get_db)):
     batch = _get_batch_or_404(db, batch_id)
     result = import_service.validate_and_reconstruct(db, batch)
     return ValidateResponse(**result)
+
+
+@router.delete("/{batch_id}", status_code=204)
+def delete_import(batch_id: UUID, db: Session = Depends(get_db)):
+    batch = _get_batch_or_404(db, batch_id)
+    import_service.delete_batch(db, batch)
+    return None

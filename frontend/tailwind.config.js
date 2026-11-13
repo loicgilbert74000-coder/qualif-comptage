@@ -11,6 +11,10 @@ export default {
           600: "#2563eb",
           50: "#eef4fb",
         },
+        sidebar: {
+          DEFAULT: "#15294a",
+          active: "#2f4d79",
+        },
       },
     },
   },

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import TopBar from "../components/TopBar";
 import StepIndicator from "../components/StepIndicator";
 import StatusBadge from "../components/StatusBadge";
@@ -74,6 +74,24 @@ export default function QualificationPage() {
       await api.reanalyze(id);
     }
     await refreshList();
+  }
+
+  async function handleDelete(id: string, e: MouseEvent) {
+    e.stopPropagation();
+    const target = imports.find((i) => i.id === id);
+    if (!window.confirm(`Supprimer « ${target?.name ?? "ce fichier"} » de la liste des imports ?`)) return;
+    try {
+      await api.deleteImport(id);
+      if (activeId === id) setActiveId(null);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      await refreshList();
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   const selectedBatches = imports.filter((i) => selectedIds.has(i.id));
@@ -153,65 +171,83 @@ export default function QualificationPage() {
             </div>
 
             <div className="overflow-hidden rounded-lg border border-gray-200">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-50 text-gray-500">
-                  <tr>
-                    <th className="w-8 px-3 py-2"></th>
-                    <th className="px-3 py-2 font-medium">Fichier / Dossier</th>
-                    <th className="px-3 py-2 font-medium">Bâtiments</th>
-                    <th className="px-3 py-2 font-medium">Compteurs</th>
-                    <th className="px-3 py-2 font-medium">Période</th>
-                    <th className="px-3 py-2 font-medium">Qualité des données</th>
-                    <th className="px-3 py-2 font-medium">Statut</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {imports.length === 0 && (
+              <div className="max-h-[172px] overflow-y-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 z-10 bg-gray-50 text-gray-500">
                     <tr>
-                      <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
-                        Aucun fichier importé pour l'instant.
-                      </td>
+                      <th className="w-8 px-3 py-2"></th>
+                      <th className="px-3 py-2 font-medium">Fichier / Dossier</th>
+                      <th className="px-3 py-2 font-medium">Bâtiments</th>
+                      <th className="px-3 py-2 font-medium">Compteurs</th>
+                      <th className="px-3 py-2 font-medium">Période</th>
+                      <th className="px-3 py-2 font-medium">Qualité des données</th>
+                      <th className="px-3 py-2 font-medium">Statut</th>
+                      <th className="w-9 px-3 py-2"></th>
                     </tr>
-                  )}
-                  {imports.map((b) => (
-                    <tr
-                      key={b.id}
-                      className={`cursor-pointer hover:bg-gray-50 ${activeId === b.id ? "bg-geneva-50" : ""}`}
-                      onClick={() => setActiveId(b.id)}
-                    >
-                      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(b.id)}
-                          onChange={() => toggleSelect(b.id)}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2 font-medium text-gray-800">
-                          {b.kind === "dossier" ? <FolderIcon small /> : <FileIcon small />}
-                          {b.name}
-                          {b.kind === "dossier" && (
-                            <span className="text-xs font-normal text-gray-400">({b.file_count} fichiers)</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-gray-600">{b.building_count}</td>
-                      <td className="px-3 py-2 text-gray-600">{b.meter_count}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-gray-600">
-                        {b.period_start ? new Date(b.period_start).toLocaleDateString("fr-CH") : "—"} -{" "}
-                        {b.period_end ? new Date(b.period_end).toLocaleDateString("fr-CH") : "—"}
-                      </td>
-                      <td className="px-3 py-2">
-                        <QualityBar value={b.quality_score} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <StatusBadge status={b.status} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {imports.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="px-3 py-8 text-center text-gray-400">
+                          Aucun fichier importé pour l'instant.
+                        </td>
+                      </tr>
+                    )}
+                    {imports.map((b) => (
+                      <tr
+                        key={b.id}
+                        className={`cursor-pointer hover:bg-gray-50 ${activeId === b.id ? "bg-geneva-50" : ""}`}
+                        onClick={() => setActiveId(b.id)}
+                      >
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(b.id)}
+                            onChange={() => toggleSelect(b.id)}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2 font-medium text-gray-800">
+                            {b.kind === "dossier" ? <FolderIcon small /> : <FileIcon small />}
+                            {b.name}
+                            {b.kind === "dossier" && (
+                              <span className="text-xs font-normal text-gray-400">({b.file_count} fichiers)</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">{b.building_count}</td>
+                        <td className="px-3 py-2 text-gray-600">{b.meter_count}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-gray-600">
+                          {b.period_start ? new Date(b.period_start).toLocaleDateString("fr-CH") : "—"} -{" "}
+                          {b.period_end ? new Date(b.period_end).toLocaleDateString("fr-CH") : "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <QualityBar value={b.quality_score} />
+                        </td>
+                        <td className="px-3 py-2">
+                          <StatusBadge status={b.status} />
+                        </td>
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => handleDelete(b.id, e)}
+                            title="Supprimer ce fichier"
+                            aria-label="Supprimer ce fichier"
+                            className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
+            {imports.length > 3 && (
+              <p className="mt-1.5 text-xs text-gray-400">
+                {imports.length} fichiers — faites défiler la liste pour voir les suivants, ou supprimez les fichiers en trop.
+              </p>
+            )}
 
             <div className="mt-3 flex items-center justify-between text-sm text-gray-500">
               <span>{selectedIds.size} fichier(s) sélectionné(s)</span>
@@ -285,6 +321,21 @@ function InfoIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={className}>
       <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
       <path d="M12 11v5.5M12 8v.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className}>
+      <path
+        d="M5 7h14M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-9 0 1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M10 11v6M14 11v6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }

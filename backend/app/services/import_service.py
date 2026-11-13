@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import shutil
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -321,3 +323,22 @@ def reject_batch(db: Session, batch: ImportBatch) -> ImportBatch:
     db.commit()
     db.refresh(batch)
     return batch
+
+
+def delete_batch(db: Session, batch: ImportBatch) -> None:
+    """Remove an import entry entirely (used from the "trop de fichiers"
+    clean-up in the import panel). Its readings, anomalies and history rows
+    are removed with it (cascade="all, delete-orphan" on ImportBatch), but
+    the meters/buildings it created are left alone since another import may
+    still reference them. The raw file(s) kept on disk are deleted too."""
+    storage_path = Path(batch.storage_path) if batch.storage_path else None
+    db.delete(batch)
+    db.commit()
+    if storage_path and storage_path.exists():
+        try:
+            if storage_path.is_dir():
+                shutil.rmtree(storage_path, ignore_errors=True)
+            else:
+                storage_path.unlink()
+        except OSError:
+            pass

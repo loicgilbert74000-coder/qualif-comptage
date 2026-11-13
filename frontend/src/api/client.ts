@@ -24,6 +24,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(detail);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -52,6 +53,8 @@ export const api = {
 
   validate: (batchId: string) =>
     request<ValidateResponse>(`/imports/${batchId}/validate`, { method: "POST" }),
+
+  deleteImport: (batchId: string) => request<void>(`/imports/${batchId}`, { method: "DELETE" }),
 
   listBuildings: () => request<Building[]>("/buildings"),
 

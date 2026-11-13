@@ -1,9 +1,9 @@
 import clsx from "clsx";
 
 const STEPS = [
-  { n: 1, label: "Importer les données" },
-  { n: 2, label: "Qualifier et analyser" },
-  { n: 3, label: "Valider, traiter et reconstruire" },
+  { n: 1, label: "Importer et valider" },
+  { n: 2, label: "Traiter et reconstruire" },
+  { n: 3, label: "Valider et exporter" },
 ];
 
 export default function StepIndicator({ current }: { current: 1 | 2 | 3 }) {

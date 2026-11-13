@@ -21,20 +21,16 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-gray-200 bg-white">
-      <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-5">
-        <GenevaCrest />
-        <div className="leading-tight">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-geneva-900">
-            République
-          </div>
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-geneva-900">
-            et Canton de Genève
-          </div>
-        </div>
+    <aside className="flex h-full w-64 shrink-0 flex-col bg-sidebar text-slate-300">
+      <div className="flex items-center px-5 py-5">
+        <img
+          src="/geneva-logo.png"
+          alt="République et Canton de Genève"
+          className="h-[52px] w-auto"
+        />
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 space-y-1 px-3 py-2">
         {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -44,8 +40,8 @@ export default function Sidebar() {
               clsx(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-geneva-50 text-geneva-700"
-                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  ? "bg-sidebar-active text-white"
+                  : "text-slate-300 hover:bg-white/5 hover:text-white"
               )
             }
           >
@@ -55,27 +51,25 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-gray-100 px-3 py-4">
-        <a
-          href="#"
-          className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-900"
-        >
-          <IconHelp className="h-5 w-5 shrink-0" />
-          <span>Aide & support</span>
-        </a>
-        {version && <p className="mt-2 px-3 text-[11px] text-gray-400">{version}</p>}
+      <div className="mt-auto">
+        <img
+          src="/geneva-skyline.png"
+          alt=""
+          aria-hidden
+          className="h-28 w-full object-cover object-bottom opacity-90"
+        />
+        <div className="px-3 pb-5 pt-3">
+          <a
+            href="#"
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-white/5 hover:text-white"
+          >
+            <IconHelp className="h-5 w-5 shrink-0" />
+            <span>Aide & support</span>
+          </a>
+          {version && <p className="mt-2 px-3 text-[11px] text-slate-500">{version}</p>}
+        </div>
       </div>
     </aside>
-  );
-}
-
-function GenevaCrest() {
-  return (
-    <svg viewBox="0 0 48 48" className="h-10 w-10 shrink-0" aria-hidden>
-      <path d="M24 4 L40 12 V24 C40 34 33 41 24 44 C15 41 8 34 8 24 V12 Z" fill="#fde047" stroke="#0f2a4a" strokeWidth="1.5" />
-      <path d="M24 4 L40 12 V24 C40 34 33 41 24 44 Z" fill="#1d4b7c" opacity="0.15" />
-      <path d="M14 22 h20 M24 14 v16" stroke="#0f2a4a" strokeWidth="2.4" strokeLinecap="round" />
-    </svg>
   );
 }
 
