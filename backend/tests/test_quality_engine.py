@@ -13,6 +13,72 @@ def test_detect_column_mapping_french_headers():
     assert mapping["valeur"] == "valeur"
 
 
+def test_parse_csv_bytes_iso_dates_are_not_corrupted_by_dayfirst():
+    # Regression test: pandas' dayfirst=True can silently swap day and month
+    # even on an unambiguous ISO date (e.g. "2025-10-01" -> 10 January
+    # instead of 1 October) on some versions. ISO dates must always come out
+    # exactly as written.
+    content = (
+        "date;grandeur;unite;valeur\n"
+        "2025-10-01;Index Gaz 1;m3;100\n"
+        "2025-01-02;Index Gaz 1;m3;90\n"
+    ).encode()
+    result = parse_csv_bytes(content, "manual.csv")
+    rows = result.series[0].rows.set_index("timestamp")["value"]
+    assert rows[pd.Timestamp("2025-10-01")] == 100
+    assert rows[pd.Timestamp("2025-01-02")] == 90
+
+
+def test_parse_csv_bytes_accepts_label_column_as_meter_identifier():
+    # Manual-readings exports often have no "id_compteur" column at all, only
+    # a free-text label ("grandeur") naming what was read.
+    content = (
+        "date;grandeur;emplacement;unite;valeur\n"
+        "2025-01-02;Index Gaz 1;;m3;7132267\n"
+        "2025-02-11;Index Gaz 1;;m3;7287490\n"
+        "2025-01-02;Index Mazout 1;Chaudière gauche;lt;16545\n"
+    ).encode()
+    result = parse_csv_bytes(content, "releves-manuels.csv")
+    codes = {s.meter_code for s in result.series}
+    assert codes == {"Index Gaz 1", "Index Mazout 1"}
+    # No id_batiment column and no dash convention in the labels: every
+    # meter should fall back to the same building, named after the file.
+    assert {s.building_code for s in result.series} == {"releves-manuels"}
+
+
+def test_parse_csv_bytes_falls_back_to_filename_when_no_identifier_column():
+    # A single-meter logger export with no identifier column whatsoever: the
+    # whole file is one series, and the (consistent) fallback identifier is
+    # the filename itself, for both the meter and its building.
+    content = (
+        "date;heure_deduite;volume_m3;energie_kwh\n"
+        "01/01/2025;01/01/2025;161;1857\n"
+        "01/01/2025;01/01/2025 1:00;211;2432\n"
+    ).encode()
+    result = parse_csv_bytes(content, "site-gaz-horaire.csv")
+    assert len(result.series) == 1
+    s = result.series[0]
+    assert s.meter_code == "site-gaz-horaire"
+    assert s.building_code == "site-gaz-horaire"
+    assert s.unit == "m3"  # inferred from the "volume_m3" column name
+    assert any("identifiant de compteur" in w for w in result.warnings)
+
+
+def test_parse_csv_bytes_prefers_the_more_specific_timestamp_column():
+    # "date" (day only) and "heure_deduite" (day + hour) both match the
+    # horodatage aliases; the more specific one must win regardless of which
+    # column comes first in the file.
+    content = (
+        "date;heure_deduite;volume_m3\n"
+        "01/01/2025;01/01/2025;161\n"
+        "01/01/2025;01/01/2025 5:00;211\n"
+    ).encode()
+    result = parse_csv_bytes(content, "test.csv")
+    assert result.column_mapping["horodatage"] == "heure_deduite"
+    timestamps = set(result.series[0].rows["timestamp"])
+    assert pd.Timestamp("2025-01-01 05:00:00") in timestamps
+
+
 def test_parse_csv_bytes_groups_by_meter():
     content = (
         "mois;id_compteur;id_site;fluide;mesure;valeur;unite\n"

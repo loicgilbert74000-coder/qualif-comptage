@@ -21,18 +21,38 @@ import io
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pandas as pd
 
-# header variants we recognise out of the box, lower-cased & accent-stripped
+# Header variants we recognise out of the box, lower-cased & accent-stripped,
+# ORDERED BY PREFERENCE (first = best match) when several columns of a file
+# could plausibly fill the same logical field — e.g. a file with both "date"
+# (day only) and "heure_deduite" (day + hour) must pick the latter, and a
+# file with both "volume_m3" and "energie_kwh" must pick deterministically
+# rather than whichever happens to come first in the file.
 HEADER_ALIASES: dict[str, list[str]] = {
-    "horodatage": ["horodatage", "date", "mois", "heure_deduite", "datetime", "timestamp", "periode"],
-    "id_compteur": ["id_compteur", "compteur", "meter_id", "id_meter", "code_compteur"],
+    "horodatage": [
+        "horodatage", "datetime", "timestamp", "heure_deduite", "heure",
+        "periode", "date", "mois",
+    ],
+    "id_compteur": [
+        "id_compteur", "compteur", "meter_id", "id_meter", "code_compteur",
+        "grandeur", "designation", "libelle", "point_mesure", "compteur_label",
+    ],
     "valeur": ["valeur", "value", "releve", "index", "volume_m3", "energie_kwh"],
     "unite": ["unite", "unit", "unite_valeur"],
     "id_batiment": ["id_batiment", "id_site", "building_id", "batiment", "site"],
     "fluide": ["fluide", "fluid", "energie", "vecteur"],
     "mesure": ["mesure", "role", "niveau"],
+}
+
+# When a file has no explicit "unité" column, the unit can often be read off
+# the name of the column used as "valeur" itself (a common convention in
+# exports from metering software).
+COLUMN_UNIT_HINTS: dict[str, str] = {
+    "volume_m3": "m3",
+    "energie_kwh": "kWh",
 }
 
 
@@ -47,14 +67,27 @@ def detect_delimiter(sample: str) -> str:
 
 
 def detect_column_mapping(columns: list[str]) -> dict[str, str]:
+    """For each logical field, pick the column matching the highest-priority
+    alias — ranked by position in HEADER_ALIASES, never by the column's
+    position in the file (a file can list a less specific column, such as a
+    date-only field, before a more specific one, such as a full timestamp)."""
     normed = {c: _norm(c) for c in columns}
     mapping: dict[str, str] = {}
     for logical, aliases in HEADER_ALIASES.items():
+        best_col, best_rank = None, None
         for col, n in normed.items():
             if n in aliases:
-                mapping[logical] = col
-                break
+                rank = aliases.index(n)
+                if best_rank is None or rank < best_rank:
+                    best_col, best_rank = col, rank
+        if best_col:
+            mapping[logical] = best_col
     return mapping
+
+
+def _sanitize_code(stem: str) -> str:
+    code = re.sub(r"[^A-Za-z0-9_-]+", "-", stem).strip("-")
+    return code or "fichier"
 
 
 @dataclass
@@ -84,16 +117,23 @@ def _parse_timestamp(raw: str) -> pd.Timestamp | None:
     # YYYY-MM month period -> first of month
     if re.fullmatch(r"\d{4}-\d{2}", raw):
         return pd.Timestamp(raw + "-01")
+    # ISO dates (YYYY-MM-DD, optionally with a time) are unambiguous and must
+    # NOT be parsed with dayfirst=True: depending on the pandas version, that
+    # flag can silently swap day and month even on an ISO string (e.g.
+    # "2025-10-01" becoming 10 January instead of 1 October) whenever the day
+    # is <= 12. dayfirst is only meaningful — and needed — for the
+    # genuinely ambiguous DD/MM/YYYY style (e.g. "01/10/2025").
+    if re.match(r"^\d{4}-\d{2}-\d{2}([ T]|$)", raw):
+        try:
+            return pd.to_datetime(raw, dayfirst=False)
+        except (ValueError, TypeError):
+            return None
     try:
         return pd.to_datetime(raw, dayfirst=True)
     except (ValueError, TypeError):
         return None
 
 
-def infer_meter_code(row: pd.Series, mapping: dict[str, str]) -> str:
-    if "id_compteur" in mapping:
-        return str(row[mapping["id_compteur"]]).strip()
-    raise ValueError("id_compteur introuvable : impossible d'identifier le compteur de cette ligne")
 
 
 def parse_csv_bytes(
@@ -111,12 +151,27 @@ def parse_csv_bytes(
     df = pd.read_csv(io.StringIO(text), sep=delim, dtype=str, keep_default_na=False)
     df.columns = [c.strip() for c in df.columns]
 
-    mapping = column_mapping or detect_column_mapping(list(df.columns))
-    missing = [k for k in ("horodatage", "id_compteur", "valeur") if k not in mapping]
+    mapping = dict(column_mapping) if column_mapping else detect_column_mapping(list(df.columns))
+
+    missing = [k for k in ("horodatage", "valeur") if k not in mapping]
     if missing:
         raise ValueError(
             f"Colonnes obligatoires introuvables dans {filename} : {', '.join(missing)}. "
             "Configure le mapping de colonnes pour ce fichier."
+        )
+
+    # Many real-world exports (manual readings, single-meter logger files)
+    # carry no explicit meter identifier column at all: the whole file IS one
+    # meter's series, named after the file itself. Rather than reject these,
+    # synthesize a constant id_compteur column from the filename.
+    used_synthetic_meter = "id_compteur" not in mapping
+    if used_synthetic_meter:
+        synthetic_code = _sanitize_code(Path(filename).stem)
+        df["__synthetic_id_compteur__"] = synthetic_code
+        mapping["id_compteur"] = "__synthetic_id_compteur__"
+        warnings.append(
+            f"Aucune colonne d'identifiant de compteur trouvée : toutes les lignes de {filename} "
+            f"ont été regroupées sous le compteur « {synthetic_code} »."
         )
 
     dec = "," if decimal_separator == "," else "."
@@ -146,9 +201,19 @@ def parse_csv_bytes(
         if "id_batiment" in mapping:
             vals = g[mapping["id_batiment"]].dropna()
             building_code = vals.iloc[0].strip() if len(vals) else None
+        if not building_code and not used_synthetic_meter and "-" in meter_code:
+            # fall back to convention METER = BUILDING-SUFFIX (e.g. S04-PAC -> S04).
+            # Skipped when the meter code was itself synthesized from the
+            # filename: any dash in it is just part of the filename, not a
+            # site-code convention, and splitting it would truncate the name.
+            building_code = meter_code.rsplit("-", 1)[0]
         if not building_code:
-            # fall back to convention METER = BUILDING-SUFFIX (e.g. S04-PAC -> S04)
-            building_code = meter_code.rsplit("-", 1)[0] if "-" in meter_code else meter_code
+            # No building column and no dash-prefixed convention to lean on
+            # (e.g. a manual-readings file identifying meters by a free-text
+            # label like "Index Gaz 1"): assume one file = one site, named
+            # after the file, rather than inventing one phantom building per
+            # meter label.
+            building_code = _sanitize_code(Path(filename).stem)
 
         fluid_type = None
         if "fluide" in mapping:
@@ -164,6 +229,8 @@ def parse_csv_bytes(
         if "unite" in mapping:
             vals = g[mapping["unite"]].dropna()
             unit = vals.iloc[0].strip() if len(vals) else None
+        if not unit:
+            unit = COLUMN_UNIT_HINTS.get(_norm(mapping["valeur"]))
 
         series.append(
             ParsedSeries(
