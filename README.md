@@ -46,6 +46,24 @@ de compteur n'exige donc aucune modification du schéma ou du code.
 
 ## Lancer en local (Docker)
 
+### Option A — images déjà construites (le plus rapide)
+
+Chaque push sur `main` déclenche un pipeline GitHub Actions qui construit les
+images backend et frontend et les publie sur GitHub Container Registry. Le
+dépôt étant privé, les images le sont aussi : connecte-toi d'abord à GHCR
+avec un [Personal Access Token](https://github.com/settings/tokens) ayant le
+scope `read:packages` (`write:packages` si tu veux aussi en publier) :
+
+```bash
+docker login ghcr.io -u <ton-user-github> -p <ton-PAT>
+docker compose -f docker-compose.images.yml up -d
+```
+
+Images publiées : `ghcr.io/loicgilbert74000-coder/qualif-comptage-backend`
+et `...-frontend`, tag `latest` et tag par commit (sha).
+
+### Option B — build local
+
 ```bash
 docker compose up --build
 ```

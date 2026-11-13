@@ -1,0 +1,52 @@
+# Use the pre-built images published by GitHub Actions to GHCR, instead of
+# building locally. Usage:
+#
+#   docker login ghcr.io -u <ton-user-github> -p <ton-PAT-avec-scope-read:packages>
+#   docker compose -f docker-compose.images.yml up -d
+#
+# (Le dépôt est privé, donc les images le sont aussi : il faut être connecté
+# à ghcr.io pour pouvoir les télécharger — voir le README pour créer un PAT.)
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qualif
+      POSTGRES_PASSWORD: qualif
+      POSTGRES_DB: qualif_comptage
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qualif"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: ghcr.io/loicgilbert74000-coder/qualif-comptage-backend:latest
+    restart: unless-stopped
+    environment:
+      QC_DATABASE_URL: postgresql+psycopg2://qualif:qualif@db:5432/qualif_comptage
+      QC_STORAGE_DIR: /data/imports
+      QC_CORS_ORIGINS: '["http://localhost:5173", "http://localhost:3000", "http://localhost:8080"]'
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - imports_data:/data/imports
+    ports:
+      - "8000:8000"
+
+  frontend:
+    image: ghcr.io/loicgilbert74000-coder/qualif-comptage-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  db_data:
+  imports_data:
