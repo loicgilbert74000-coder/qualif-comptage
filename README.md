@@ -44,6 +44,25 @@ Le modèle de données ne code en dur aucun type de fluide : `fluid_type`,
 partir du fichier importé (ou déduits du code du compteur). Un nouveau type
 de compteur n'exige donc aucune modification du schéma ou du code.
 
+## Exécutable autonome (sans Docker)
+
+Un pipeline GitHub Actions (`.github/workflows/build-desktop.yml`) construit
+à chaque push un exécutable autonome, pour Windows et pour Linux : l'API, le
+moteur de qualité et le frontend déjà compilé sont empaquetés en un seul
+fichier avec PyInstaller. Aucune installation requise (pas de Docker, pas de
+Node, pas de PostgreSQL) : les données sont stockées dans une base SQLite
+locale, sous le profil de l'utilisateur
+(`%LOCALAPPDATA%\QualifComptage` sur Windows).
+
+Double-clique sur `QualifComptage.exe` : un serveur local démarre et le
+navigateur par défaut s'ouvre automatiquement sur l'application. Fermer la
+fenêtre de la console arrête l'application.
+
+Télécharge le dernier exécutable depuis l'onglet **Actions** du dépôt
+(artefact `QualifComptage-Windows` ou `QualifComptage-Linux` du dernier run
+de "Build standalone desktop executable"), ou récupère-le directement
+auprès de la personne qui te l'a envoyé.
+
 ## Lancer en local (Docker)
 
 ### Option A — images déjà construites (le plus rapide)

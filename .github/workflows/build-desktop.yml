@@ -1,0 +1,65 @@
+name: Build standalone desktop executable
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy frontend build into the backend bundle
+        shell: bash
+        run: |
+          rm -rf backend/frontend_dist
+          cp -r frontend/dist backend/frontend_dist
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build the executable
+        working-directory: backend
+        shell: bash
+        run: |
+          SEP=";"
+          if [ "${{ runner.os }}" != "Windows" ]; then SEP=":"; fi
+          pyinstaller --onefile --name QualifComptage \
+            --add-data "frontend_dist${SEP}frontend_dist" \
+            --collect-all pandas \
+            --collect-all numpy \
+            --collect-submodules uvicorn \
+            --hidden-import multipart \
+            desktop_main.py
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: QualifComptage-${{ runner.os }}
+          path: |
+            backend/dist/QualifComptage.exe
+            backend/dist/QualifComptage
+          if-no-files-found: ignore

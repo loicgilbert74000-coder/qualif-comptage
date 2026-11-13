@@ -10,6 +10,12 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 
+# PyInstaller desktop build
+backend/frontend_dist/
+backend/build/
+backend/dist/
+backend/*.spec
+
 # Env
 .env
 .env.*

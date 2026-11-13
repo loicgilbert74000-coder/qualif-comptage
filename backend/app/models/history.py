@@ -3,7 +3,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import String, DateTime, ForeignKey, Enum, JSON
-from sqlalchemy.dialects.postgresql import UUID
+from app.db_types import GUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -22,7 +22,7 @@ class ProcessingHistory(Base):
 
     __tablename__ = "processing_history"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     import_batch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_batches.id", ondelete="CASCADE"))
     action: Mapped[ProcessingAction] = mapped_column(Enum(ProcessingAction))
     performed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

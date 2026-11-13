@@ -1,7 +1,7 @@
 import uuid
 
 from sqlalchemy import String, ForeignKey, Date
-from sqlalchemy.dialects.postgresql import UUID
+from app.db_types import GUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -15,7 +15,7 @@ class Meter(Base):
 
     __tablename__ = "meters"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     building_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("buildings.id", ondelete="CASCADE"))
     code: Mapped[str] = mapped_column(String(128), index=True)  # e.g. B101-ELEC-01, S04-PAC
     label: Mapped[str] = mapped_column(String(255))

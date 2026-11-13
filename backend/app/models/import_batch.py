@@ -3,7 +3,7 @@ import enum
 from datetime import datetime, date
 
 from sqlalchemy import String, DateTime, Date, Float, Integer, JSON, Enum
-from sqlalchemy.dialects.postgresql import UUID
+from app.db_types import GUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -29,7 +29,7 @@ class ImportBatch(Base):
 
     __tablename__ = "import_batches"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255))              # display name, e.g. Relevés_B101_2024.csv
     kind: Mapped[ImportKind] = mapped_column(Enum(ImportKind), default=ImportKind.FICHIER)
     file_count: Mapped[int] = mapped_column(Integer, default=1)

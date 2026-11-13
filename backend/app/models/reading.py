@@ -3,7 +3,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import Float, DateTime, ForeignKey, Enum, String
-from sqlalchemy.dialects.postgresql import UUID
+from app.db_types import GUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -24,7 +24,7 @@ class Reading(Base):
 
     __tablename__ = "readings"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     meter_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meters.id", ondelete="CASCADE"), index=True)
     import_batch_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("import_batches.id", ondelete="CASCADE"), index=True
