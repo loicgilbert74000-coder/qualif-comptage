@@ -25,7 +25,7 @@ interface Props {
 
 export default function DetailedAnalysis({ detail, onAction }: Props) {
   const navigate = useNavigate();
-  const { summary, meters, building_name } = detail;
+  const { summary, meters } = detail;
   const [tab, setTab] = useState<Tab>("graphique");
   const [selectedMeterId, setSelectedMeterId] = useState(meters[0]?.meter_id ?? "");
   const [series, setSeries] = useState<SeriesPoint[]>([]);
@@ -82,35 +82,9 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
     navigate("/traitements");
   }
 
-  function formatPeriod(p: string | null) {
-    return p ? new Date(p).toLocaleDateString("fr-CH") : "—";
-  }
-
   return (
     <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
       {busy === "reanalyze" && <LoadingOverlay label="Réanalyse du fichier en cours…" />}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-6 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-gray-900">Analyse détaillée : {summary.name}</h2>
-          <div className="mt-1 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-gray-500">
-            <span>
-              <strong className="font-medium text-gray-700">Bâtiment :</strong>{" "}
-              {building_name ?? "plusieurs bâtiments"}
-            </span>
-            <span>
-              <strong className="font-medium text-gray-700">Compteurs :</strong> {meters.length}
-            </span>
-            <span>
-              <strong className="font-medium text-gray-700">Période :</strong>{" "}
-              {formatPeriod(summary.period_start)} – {formatPeriod(summary.period_end)}
-            </span>
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-xs uppercase tracking-wide text-gray-400">Qualité globale</div>
-          <div className="text-xl font-semibold text-gray-900">{(summary.quality_score ?? 0).toFixed(1)} %</div>
-        </div>
-      </div>
 
       <div className="flex gap-1 border-b border-gray-100 px-6 pt-3">
         {TABS.map((t) => (
