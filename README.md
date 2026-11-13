@@ -51,12 +51,24 @@ sépare le vecteur (`électricité`, `chaleur`, `froid`, `gaz`, `eau froide`,
 `injection`, `livraison`, sous-compteur chaud/froid/ECS, CAD ou FAD). Une
 unité seule comme `kWh` ou `m³` ne suffit pas à déterminer le fluide.
 
+La nature de la mesure est classée séparément : `consommation` pour une
+quantité sur une période, `index` pour une valeur cumulée, `livraison` pour
+un apport ponctuel, `niveau_stock` pour une jauge, ou `indéterminé` quand les
+indices du fichier ne suffisent pas. Une mise à niveau légère ajoute cette
+colonne aux bases SQLite et PostgreSQL déjà créées.
+
 Sur les exports Rive-Claire, les identifiants sont notamment interprétés ainsi :
 `*-EL` = soutirage électrique, `*-PV` = production photovoltaïque,
 `*-EL-INJ` = injection électrique, `*-CAD` = chaleur du réseau CAD,
 `*-CH-PAC` = chaleur produite par PAC, `*-GZ` = gaz et `*-EAU` = eau froide.
 Les fichiers d'un même dossier sont détectés séparément, car leurs colonnes de
 date et de valeur peuvent différer (quart d'heure, heure ou jour).
+
+Les en-têtes `index` et les libellés tels que `Index Gaz 1` sont reconnus comme
+index. Les en-têtes `consommation_kwh`, `variation_kwh`, `volume_m3` et
+`energie_kwh` indiquent une quantité par période. La série `valeur_acquisition`
+du fichier `cas2-gaz-sig-horaire` est traitée comme une consommation en m³,
+conformément au guide de ce jeu de données, malgré son unité affichée erronée.
 
 ## Exécutable autonome (sans Docker)
 

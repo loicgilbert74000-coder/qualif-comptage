@@ -51,6 +51,7 @@ export default function BatimentsPage() {
                         <th className="py-1.5 font-medium">Fluide</th>
                         <th className="py-1.5 font-medium">Unité</th>
                         <th className="py-1.5 font-medium">Rôle</th>
+                        <th className="py-1.5 font-medium">Nature</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -61,6 +62,7 @@ export default function BatimentsPage() {
                           <td className="py-1.5 capitalize text-gray-600">{m.fluid_type}</td>
                           <td className="py-1.5 text-gray-600">{m.unit}</td>
                           <td className="py-1.5 capitalize text-gray-600">{m.role}</td>
+                          <td className="py-1.5 capitalize text-gray-600">{m.measurement_kind}</td>
                         </tr>
                       ))}
                     </tbody>

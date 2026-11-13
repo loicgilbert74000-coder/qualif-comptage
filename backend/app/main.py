@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from sqlalchemy import inspect, text
 
 from app.config import settings
 from app.database import engine
@@ -26,6 +27,15 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
+    # ``create_all`` does not add fields to an existing database. Keep older
+    # Docker/SQLite installations compatible with the new measurement label.
+    columns = {column["name"] for column in inspect(engine).get_columns("meters")}
+    if "measurement_kind" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "ALTER TABLE meters ADD COLUMN measurement_kind VARCHAR(24) "
+                "NOT NULL DEFAULT 'indéterminé'"
+            ))
 
 
 app.include_router(imports.router)

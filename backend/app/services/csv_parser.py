@@ -35,14 +35,14 @@ from app.services.meter_classifier import classify_meter
 HEADER_ALIASES: dict[str, list[str]] = {
     "horodatage": [
         "horodatage", "datetime", "timestamp", "heure_deduite", "heure",
-        "periode", "date", "mois",
+        "periode", "debut", "date", "mois",
     ],
     "id_compteur": [
         "id_compteur", "compteur", "meter_id", "id_meter", "code_compteur",
         "grandeur", "designation", "libelle", "point_mesure", "compteur_label",
     ],
-    "valeur": ["valeur", "value", "releve", "index", "volume_m3", "energie_kwh"],
-    "unite": ["unite", "unit", "unite_valeur"],
+    "valeur": ["consommation_kwh", "variation_kwh", "valeur_acquisition", "valeur", "value", "releve", "index", "volume_m3", "energie_kwh"],
+    "unite": ["unite", "unit", "unite_valeur", "unite_affichee"],
     "id_batiment": ["id_batiment", "id_site", "building_id", "batiment", "site"],
     "fluide": ["fluide", "fluid", "energie", "vecteur"],
     "mesure": ["mesure", "role", "niveau"],
@@ -99,6 +99,7 @@ class ParsedSeries:
     fluid_type: str | None
     role: str | None
     unit: str | None
+    measurement_kind: str
     rows: pd.DataFrame = field(repr=False)  # columns: timestamp, value
 
 
@@ -239,6 +240,7 @@ def parse_csv_bytes(
             role=role,
             unit=unit,
             value_column=mapping["valeur"],
+            measurement_label=meter_code,
         )
 
         series.append(
@@ -248,6 +250,7 @@ def parse_csv_bytes(
                 fluid_type=classification.fluid_type or fluid_type,
                 role=classification.role or role,
                 unit=classification.unit or unit,
+                measurement_kind=classification.measurement_kind,
                 rows=rows.reset_index(drop=True),
             )
         )
