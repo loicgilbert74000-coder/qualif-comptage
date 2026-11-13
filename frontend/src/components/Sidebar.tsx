@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 
@@ -10,6 +11,15 @@ const NAV_ITEMS = [
 ];
 
 export default function Sidebar() {
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d) => setVersion(d.version ?? null))
+      .catch(() => setVersion(null));
+  }, []);
+
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-gray-200 bg-white">
       <div className="flex items-center gap-3 border-b border-gray-100 px-5 py-5">
@@ -53,6 +63,7 @@ export default function Sidebar() {
           <IconHelp className="h-5 w-5 shrink-0" />
           <span>Aide & support</span>
         </a>
+        {version && <p className="mt-2 px-3 text-[11px] text-gray-400">{version}</p>}
       </div>
     </aside>
   );

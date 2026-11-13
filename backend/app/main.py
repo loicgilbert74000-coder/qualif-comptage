@@ -10,6 +10,7 @@ from app.config import settings
 from app.database import engine
 from app.models import Base
 from app.routers import imports, buildings, history, settings_router
+from app._version import BUILD_VERSION
 
 app = FastAPI(title="Qualification des données de comptage", version="0.1.0")
 
@@ -35,7 +36,7 @@ app.include_router(settings_router.router)
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": BUILD_VERSION}
 
 
 # --- Standalone desktop build ------------------------------------------------

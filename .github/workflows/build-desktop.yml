@@ -63,6 +63,13 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Stamp this build with a version
+        shell: bash
+        run: |
+          VERSION="build${{ github.run_number }}-$(git rev-parse --short HEAD)"
+          echo "BUILD_VERSION = \"$VERSION\"" > backend/app/_version.py
+          echo "version=$VERSION" >> "$GITHUB_ENV"
+
       - name: Build the executable
         working-directory: backend
         shell: bash
@@ -77,17 +84,20 @@ jobs:
             --hidden-import multipart \
             desktop_main.py
 
-      - name: Rename artifact per OS and upload to the release
+      - name: Rename artifact per OS+version and upload to the release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd backend/dist
           if [ "${{ runner.os }}" = "Windows" ]; then
-            asset="QualifComptage-Windows.exe"
+            asset="QualifComptage-Windows-${version}.exe"
             mv QualifComptage.exe "$asset"
           else
-            asset="QualifComptage-Linux"
+            asset="QualifComptage-Linux-${version}"
             mv QualifComptage "$asset"
           fi
-          gh release upload desktop-latest "$asset" --clobber
+          # Every build gets its own uniquely-named asset (never overwritten),
+          # so two builds downloaded around the same time can't be confused
+          # for one another — the version is right there in the filename.
+          gh release upload desktop-latest "$asset"
