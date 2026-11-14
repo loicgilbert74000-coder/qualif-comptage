@@ -41,8 +41,8 @@ const CATEGORIES: MeterCategory[] = [
       {
         title: "Compteur bloqué / relevé recopié par erreur",
         kind: "incoherence",
-        description: "Le relevé reste identique sur plusieurs périodes consécutives alors qu'une consommation est attendue.",
-        detection: "« Palier suspect » — série de valeurs strictement identiques au-delà d'un seuil de répétitions.",
+        description: "L'index peut rester inchangé lorsqu'aucune consommation n'est attendue, par exemple le week-end. Le plateau est suspect seulement si les mêmes créneaux saisonniers progressent habituellement.",
+        detection: "Pour un index, chaque relevé inchangé est comparé aux mêmes créneaux saisonniers : même mois et jour de semaine pour des données journalières, plus le même créneau horaire pour des données infrajournalières. Un créneau n'est considéré actif que si au moins 3 deltas comparables sont positifs. Le moteur signale 4 créneaux actifs consécutifs sans hausse.",
       },
       {
         title: "Relevé manquant",

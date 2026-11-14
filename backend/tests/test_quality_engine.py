@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -164,3 +166,19 @@ def test_reconstruction_fills_gaps_and_smooths_anomalies():
     # the reconstructed spike day should land close to the underlying clean profile
     spike_ts = report.expected_index[72]
     assert abs(result.values[spike_ts] - base[72]) < 100
+
+
+def test_daily_index_plateau_uses_same_weekday_and_ignores_inactive_weekends():
+    project_root = Path(__file__).resolve().parents[2]
+    fixture = project_root / "backend" / "tests" / "fixtures" / "daily_index_weekend_plateau.csv"
+    rows = pd.read_csv(fixture, parse_dates=["timestamp"])
+
+    # Four active weekdays increase before the later four-day plateau.
+    rises = rows.loc[rows["timestamp"].between("2025-05-19", "2025-05-22"), "value"]
+    assert rises.diff().dropna().gt(0).all()
+
+    report = analyze_series("SIM-INDEX-WEEKEND", rows, measurement_kind="index")
+    plateaus = [a for a in report.anomalies if a.subtype == "index_plateau_saison"]
+    assert len(plateaus) == 1
+    assert plateaus[0].period_start.date().isoformat() == "2025-05-26"
+    assert plateaus[0].period_end.date().isoformat() == "2025-05-29"
