@@ -186,6 +186,12 @@ def ingest_files(
     buildings_seen: set[str] = set()
     meters_seen: set[str] = set()
     period_min, period_max = None, None
+    # Collected across every file/meter and written in one bulk insert at
+    # the end instead of one `db.add(Reading(...))` per row: for a year of
+    # quarter-hourly readings that's tens of thousands of individual ORM
+    # objects (each with its own session bookkeeping) per meter, which is
+    # where a large import's time was actually going.
+    reading_mappings: list[dict] = []
 
     for filename, content in files:
         result: ParseResult = parse_csv_bytes(
@@ -200,23 +206,41 @@ def ingest_files(
             buildings_seen.add(building.code)
             meters_seen.add(meter.code)
 
-            for _, row in s.rows.iterrows():
-                ts = row["timestamp"]
-                if period_min is None or ts < period_min:
-                    period_min = ts
-                if period_max is None or ts > period_max:
-                    period_max = ts
-                db.add(
-                    Reading(
-                        meter_id=meter.id,
-                        import_batch_id=batch.id,
-                        timestamp=ts.to_pydatetime(),
-                        value=row["value"],
-                        raw_value=row["value"],
-                        unit=meter.unit,
-                        quality=ReadingQuality.VALIDE,
-                    )
+            if s.rows.empty:
+                continue
+
+            series_min = s.rows["timestamp"].min()
+            series_max = s.rows["timestamp"].max()
+            if period_min is None or series_min < period_min:
+                period_min = series_min
+            if period_max is None or series_max > period_max:
+                period_max = series_max
+
+            # Vectorized extraction (native python datetimes, float-or-NaN
+            # values) instead of iterrows(), which builds a pandas Series
+            # per row — by far the more expensive way to walk a DataFrame.
+            timestamps = s.rows["timestamp"].dt.to_pydatetime()
+            values = s.rows["value"].to_numpy()
+            for ts, raw_val in zip(timestamps, values):
+                # A stored NaN is a real float, not SQL NULL — convert back
+                # to None here, at the DB-write boundary, for any value the
+                # CSV left blank or unparseable.
+                val = None if pd.isna(raw_val) else float(raw_val)
+                reading_mappings.append(
+                    {
+                        "id": uuid.uuid4(),
+                        "meter_id": meter.id,
+                        "import_batch_id": batch.id,
+                        "timestamp": ts,
+                        "value": val,
+                        "raw_value": val,
+                        "unit": meter.unit,
+                        "quality": ReadingQuality.VALIDE,
+                    }
                 )
+
+    if reading_mappings:
+        db.bulk_insert_mappings(Reading, reading_mappings)
 
     if column_mapping:
         batch.column_mapping = column_mapping

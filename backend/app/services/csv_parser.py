@@ -111,28 +111,67 @@ class ParseResult:
     warnings: list[str]
 
 
-def _parse_timestamp(raw: str) -> pd.Timestamp | None:
-    raw = str(raw).strip()
-    if not raw or raw.lower() in ("nan", "none"):
-        return None
+def _parse_timestamps(col: pd.Series) -> pd.Series:
+    """Vectorized equivalent of calling a per-value parser through
+    `.apply()` — for a year of quarter-hourly readings that's tens of
+    thousands of individual Python-level pd.to_datetime() calls, which is
+    where a large CSV's import time was actually going. Same three cases
+    as before (month period / ISO date / other), each now parsed for the
+    whole column in one C-level pass instead of one Python call per row."""
+    s = col.astype(str).str.strip()
+    empty_mask = (s == "") | s.str.lower().isin(["nan", "none"])
+
+    result = pd.Series(pd.NaT, index=col.index, dtype="datetime64[ns]")
+
     # YYYY-MM month period -> first of month
-    if re.fullmatch(r"\d{4}-\d{2}", raw):
-        return pd.Timestamp(raw + "-01")
+    month_mask = s.str.fullmatch(r"\d{4}-\d{2}") & ~empty_mask
+    if month_mask.any():
+        result.loc[month_mask] = pd.to_datetime(s[month_mask] + "-01", errors="coerce")
+
     # ISO dates (YYYY-MM-DD, optionally with a time) are unambiguous and must
     # NOT be parsed with dayfirst=True: depending on the pandas version, that
     # flag can silently swap day and month even on an ISO string (e.g.
     # "2025-10-01" becoming 10 January instead of 1 October) whenever the day
     # is <= 12. dayfirst is only meaningful — and needed — for the
     # genuinely ambiguous DD/MM/YYYY style (e.g. "01/10/2025").
-    if re.match(r"^\d{4}-\d{2}-\d{2}([ T]|$)", raw):
-        try:
-            return pd.to_datetime(raw, dayfirst=False)
-        except (ValueError, TypeError):
-            return None
-    try:
-        return pd.to_datetime(raw, dayfirst=True)
-    except (ValueError, TypeError):
-        return None
+    iso_mask = s.str.match(r"^\d{4}-\d{2}-\d{2}([ T]|$)") & ~month_mask & ~empty_mask
+    if iso_mask.any():
+        result.loc[iso_mask] = pd.to_datetime(s[iso_mask], dayfirst=False, errors="coerce")
+
+    other_mask = ~month_mask & ~iso_mask & ~empty_mask
+    if other_mask.any():
+        # format="mixed" asks pandas to infer the format PER VALUE instead
+        # of once for the whole column — needed because this branch covers
+        # arbitrary real-world layouts, and a column can genuinely mix
+        # date-only and date+time rows (e.g. a file with some unfilled
+        # daily rows next to otherwise hourly ones). Still vectorized
+        # (a single call, not a Python-level loop), just without the
+        # single-shared-format shortcut.
+        result.loc[other_mask] = pd.to_datetime(
+            s[other_mask], dayfirst=True, errors="coerce", format="mixed"
+        )
+
+    return result
+
+
+def _parse_values(col: pd.Series, dec: str) -> pd.Series:
+    """Vectorized equivalent of the previous per-row `to_float()` — same
+    column-at-a-time speedup as `_parse_timestamps`. Missing/unparseable
+    values come back as NaN (pandas' own missing-value marker, already
+    handled by `pd.isna()`/`.isna()` everywhere downstream); callers that
+    write a value into the database still need to turn that NaN into a
+    real `None` themselves, since a stored NaN is a float, not SQL NULL."""
+    s = col.astype(str).str.strip()
+    empty_mask = s == ""
+    if dec == ",":
+        # A value with exactly one comma AND a period is read as using the
+        # period as a thousands separator ("1.234,56" -> "1234.56");
+        # otherwise the comma alone is the decimal mark ("12,5" -> "12.5").
+        thousands_mask = (s.str.count(",") == 1) & s.str.contains(r"\.", regex=True)
+        s = s.mask(thousands_mask, s.str.replace(".", "", regex=False))
+        s = s.str.replace(",", ".", regex=False)
+    s = s.mask(empty_mask)
+    return pd.to_numeric(s, errors="coerce")
 
 
 
@@ -177,19 +216,8 @@ def parse_csv_bytes(
 
     dec = "," if decimal_separator == "," else "."
 
-    def to_float(v: str) -> float | None:
-        v = v.strip()
-        if v == "":
-            return None
-        if dec == ",":
-            v = v.replace(".", "").replace(",", ".") if v.count(",") == 1 and "." in v else v.replace(",", ".")
-        try:
-            return float(v)
-        except ValueError:
-            return None
-
-    df["_ts"] = df[mapping["horodatage"]].apply(_parse_timestamp)
-    df["_value"] = df[mapping["valeur"]].apply(to_float)
+    df["_ts"] = _parse_timestamps(df[mapping["horodatage"]])
+    df["_value"] = _parse_values(df[mapping["valeur"]], dec)
     bad_ts = df["_ts"].isna().sum()
     if bad_ts:
         warnings.append(f"{bad_ts} ligne(s) avec un horodatage illisible ont été ignorées.")
