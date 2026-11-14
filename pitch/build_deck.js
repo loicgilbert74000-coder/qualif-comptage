@@ -71,7 +71,7 @@ function circleIcon(slide, img, x, y, d, fill, name) {
     s.addText(f[2], { x: x + 0.2, y: y + 1.3, w: 1.7, h: 0.7, fontFace: "Calibri", fontSize: 14, color: "D5DCEA", margin: 0, valign: "top", isTextBox: true });
   });
   s.addText("Aujourd'hui : correction à la main, compteur par compteur, sans trace.", { x: 0.6, y: 4.25, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 18, bold: true, color: C.background1, margin: 0, isTextBox: true, objectName: "Constat" });
-  s.addText("Énerg-IACK 2026 · [Nom de l'équipe] · [Défi n° — titre]", { x: 0.6, y: 4.95, w: 8.8, h: 0.3, fontFace: "Calibri", fontSize: 12, color: "B8C2D6", margin: 0, isTextBox: true, objectName: "Équipe et défi" });
+  s.addText("Énerg-IACK 2026 · Défi 3 : L'IA gardienne de la donnée · Saleh Bauch, Stéphane Bernardini, Loïc Gilbert, Sébastien Lavaud", { x: 0.6, y: 4.85, w: 8.8, h: 0.5, fontFace: "Calibri", fontSize: 12, color: "B8C2D6", margin: 0, isTextBox: true, objectName: "Équipe et défi" });
 
   // 3 — Solution
   pres.addSection({ title: "Solution" });
