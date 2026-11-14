@@ -1,6 +1,6 @@
 export type ImportStatus = "en_cours" | "a_valider" | "a_corriger" | "valide" | "refuse";
 export type ImportKind = "fichier" | "dossier";
-export type Granularity = "horaire" | "journaliere" | "mensuelle";
+export type Granularity = "15min" | "30min" | "horaire" | "journaliere" | "mensuelle";
 export type PointQuality = "valide" | "incoherence" | "manquante" | "reconstruite";
 export type AnomalyType = "incoherence" | "manquante";
 
@@ -87,6 +87,12 @@ export interface OrgSettings {
   reference_window_periods: number;
   flatline_min_run: number;
   allow_negative_values: boolean;
+  historical_min_points: number;
+  robust_mad_multiplier: number;
+  historical_extreme_ratio: number;
+  zero_active_min_history: number;
+  seasonal_activity_min_history: number;
+  timestamp_tolerance_pct: number;
 }
 
 export interface Meter {

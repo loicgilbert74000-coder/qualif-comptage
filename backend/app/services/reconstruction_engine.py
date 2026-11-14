@@ -29,6 +29,8 @@ class ReconstructionResult:
 
 
 def _profile_key(ts: pd.Timestamp, granularity: str):
+    if granularity in {"15min", "30min"}:
+        return (ts.dayofweek, ts.hour, ts.minute)
     if granularity == "horaire":
         return (ts.dayofweek, ts.hour)
     if granularity == "journaliere":

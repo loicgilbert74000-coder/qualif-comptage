@@ -36,6 +36,19 @@ def on_startup():
                 "ALTER TABLE meters ADD COLUMN measurement_kind VARCHAR(24) "
                 "NOT NULL DEFAULT 'indéterminé'"
             ))
+    settings_columns = {column["name"] for column in inspect(engine).get_columns("org_settings")}
+    settings_defaults = {
+        "historical_min_points": "INTEGER NOT NULL DEFAULT 6",
+        "robust_mad_multiplier": "FLOAT NOT NULL DEFAULT 6.0",
+        "historical_extreme_ratio": "FLOAT NOT NULL DEFAULT 3.0",
+        "zero_active_min_history": "INTEGER NOT NULL DEFAULT 4",
+        "seasonal_activity_min_history": "INTEGER NOT NULL DEFAULT 3",
+        "timestamp_tolerance_pct": "FLOAT NOT NULL DEFAULT 10.0",
+    }
+    with engine.begin() as connection:
+        for name, declaration in settings_defaults.items():
+            if name not in settings_columns:
+                connection.execute(text(f"ALTER TABLE org_settings ADD COLUMN {name} {declaration}"))
 
     anomaly_columns = {column["name"] for column in inspect(engine).get_columns("anomalies")}
     if "resolution" not in anomaly_columns:

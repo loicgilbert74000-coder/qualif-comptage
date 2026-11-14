@@ -202,6 +202,14 @@ def run_quality_analysis(db: Session, batch: ImportBatch) -> list[MeterQualityRe
             reference_window_periods=cfg.reference_window_periods,
             flatline_min_run=cfg.flatline_min_run,
             allow_negative_values=cfg.allow_negative_values,
+            measurement_kind=meter.measurement_kind,
+            service_start=meter.service_start,
+            historical_min_points=cfg.historical_min_points,
+            robust_mad_multiplier=cfg.robust_mad_multiplier,
+            historical_extreme_ratio=cfg.historical_extreme_ratio,
+            zero_active_min_history=cfg.zero_active_min_history,
+            seasonal_activity_min_history=cfg.seasonal_activity_min_history,
+            timestamp_tolerance_pct=cfg.timestamp_tolerance_pct,
         )
         reports.append(report)
 
@@ -285,6 +293,7 @@ def validate_and_reconstruct(db: Session, batch: ImportBatch) -> dict:
 
         granularity = infer_granularity(pd.Series(df["timestamp"]))
         expected_index = _build_expected_index(df["timestamp"].min(), df["timestamp"].max(), granularity)
+        expected_index = expected_index.union(pd.DatetimeIndex(df["timestamp"])).sort_values()
         series = df.set_index("timestamp")["value"]
         series = series[~series.index.duplicated(keep="last")]
         aligned = series.reindex(expected_index)
