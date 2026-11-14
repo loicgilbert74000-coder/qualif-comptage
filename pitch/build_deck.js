@@ -73,7 +73,7 @@ function circleIcon(slide, img, x, y, d, fill, name) {
     s.addText(f[1], { x: 1.15, y, w: 3.5, h: 0.4, fontFace: "Calibri", fontSize: 18, bold: true, color: C.background1, margin: 0, valign: "middle", isTextBox: true });
   });
   s.addShape(pres.ShapeType.roundRect, { x: 5.0, y: 0.45, w: 4.4, h: 4.25, rectRadius: 0.08, fill: { color: PANEL }, line: { color: PANEL }, objectName: "Carte graphique" });
-  s.addText("Un compteur de gaz, 27 janvier : valeur figée à 0 pendant 6 h", { x: 5.2, y: 0.55, w: 4.0, h: 0.7, fontFace: "Calibri", fontSize: 16, bold: true, color: C.background1, valign: "top", margin: 0, isTextBox: true, objectName: "Titre graphique" });
+  s.addText("Gaz (simulé), 27 janvier : valeur figée à 0 pendant 6 h", { x: 5.2, y: 0.55, w: 4.0, h: 0.7, fontFace: "Calibri", fontSize: 16, bold: true, color: C.background1, valign: "top", margin: 0, isTextBox: true, objectName: "Titre graphique" });
   s.addChart(pres.charts.LINE, [{ name: "Gaz (kWh/h, simulé)", labels: lab(sim.hero_labels, 12), values: sim.hero_raw }], {
     x: 5.1, y: 1.3, w: 4.2, h: 3.3, chartColors: ["5CC8FF"], lineSize: 3.5, lineDataSymbol: "none", showLegend: false,
     catAxisLabelColor: SOFT, valAxisLabelColor: SOFT, catAxisLabelFontSize: 12, valAxisLabelFontSize: 12,
@@ -124,7 +124,7 @@ function circleIcon(slide, img, x, y, d, fill, name) {
     showValAxisTitle: true, valAxisTitle: "kWh par heure (simulé)", valAxisTitleFontSize: 12, valAxisTitleColor: INK, valAxisTitleFontFace: "+mn-lt",
     displayBlanksAs: "gap",
   });
-  const stats = [[`${sim.ncorr}`, "points corrigés", AMBER_TXT], [`${sim.err_pct} %`, "d'écart moyen avec la vraie valeur", TEAL_TXT], ["50/50", "anomalies injectées détectées", AMBER_TXT]];
+  const stats = [[`${sim.ncorr}`, "points corrigés", AMBER_TXT], [`${sim.err_pct} %`, "d'écart moyen avec la vraie valeur", TEAL_TXT], ["4/4", "pannes injectées détectées", AMBER_TXT]];
   stats.forEach((st, i) => {
     const y = 1.3 + i * 1.22;
     s.addShape(pres.ShapeType.roundRect, { x: 7.2, y, w: 2.3, h: 1.1, rectRadius: 0.08, fill: { color: C.background2 }, line: { color: C.background2 }, objectName: `Carte chiffre ${i + 1}` });
@@ -138,7 +138,7 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   s = pres.addSlide({ masterName: "LIGHT", sectionTitle: "Le défi point par point" });
   s.addText("Le défi 3, point par point", { placeholder: "title", align: "left", valign: "top" });
   const rows = [
-    ["Couvert", "0B6B5F", "Détecter les anomalies", "10 types, seuils réglables · 50/50 anomalies injectées détectées"],
+    ["Couvert", "0B6B5F", "Détecter les anomalies", "10 types · 50/50 anomalies injectées détectées (benchmark de l'audit)"],
     ["Partiel", "B45309", "Qualifier chaque valeur", "4 statuts aujourd'hui ; « mesuré / estimé / hypothèse » à ajouter"],
     ["Partiel", "B45309", "Tracer chaque hypothèse", "Valeur brute conservée, historique par dossier ; pas encore de trace par point"],
     ["Absent", "B3261E", "Veiller en continu", "CSV déposés à la main : pas de planificateur ni d'alertes"],
@@ -150,7 +150,7 @@ function circleIcon(slide, img, x, y, d, fill, name) {
     s.addText(r[2], { x: 2.1, y, w: 7.3, h: 0.38, fontFace: "Cambria", fontSize: 20, bold: true, color: INK, margin: 0, valign: "top", isTextBox: true });
     s.addText(r[3], { x: 2.1, y: y + 0.38, w: 7.3, h: 0.4, fontFace: "Calibri", fontSize: 16, color: INK, margin: 0, valign: "top", isTextBox: true });
   });
-  s.addText("Défauts connus (audit) : import sur valeur vide, faux positifs en horaire.", { x: 0.6, y: 4.8, w: 8.8, h: 0.5, fontFace: "Calibri", fontSize: 16, italic: true, color: INK, margin: 0, valign: "top", isTextBox: true, objectName: "Défauts connus" });
+  s.addText("Pas d'apprentissage : le diagnostic « IA » repose sur des règles. Défauts connus (audit) : import sur valeur vide, faux positifs en horaire.", { x: 0.6, y: 4.7, w: 8.4, h: 0.65, fontFace: "Calibri", fontSize: 16, italic: true, color: INK, margin: 0, valign: "top", isTextBox: true, objectName: "Défauts connus" });
 
   // ───────────── 5 — Impact, reprise, suite
   pres.addSection({ title: "Impact et suite" });
@@ -184,5 +184,19 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   const out = path.join(__dirname, "qualif-comptage-pitch.pptx");
   await pres.writeFile({ fileName: out });
   await applyTheme(out, THEME);
+  // Correctif : pptxgenjs écrit les valeurs absentes comme <c:pt><c:v></c:v></c:pt> (nombre vide, invalide).
+  // On supprime ces points : un indice manquant = trou dans la courbe, ce que PowerPoint attend.
+  const JSZip = require("jszip");
+  const zip = await JSZip.loadAsync(fs.readFileSync(out));
+  for (const name of Object.keys(zip.files).filter((n) => /^ppt\/charts\/chart\d+\.xml$/.test(n))) {
+    const xml = await zip.file(name).async("string");
+    zip.file(name, xml.replace(/<c:pt idx="\d+"><c:v><\/c:v><\/c:pt>/g, ""));
+  }
+  const clean = new JSZip();
+  for (const name of Object.keys(zip.files)) {
+    if (zip.files[name].dir) continue; // pas d'entrées de dossier dans l'archive
+    clean.file(name, await zip.file(name).async("nodebuffer"), { createFolders: false });
+  }
+  fs.writeFileSync(out, await clean.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
   console.log("ok", out);
 })();
