@@ -40,10 +40,27 @@ def on_startup():
     anomaly_columns = {column["name"] for column in inspect(engine).get_columns("anomalies")}
     if "resolution" not in anomaly_columns:
         with engine.begin() as connection:
+            # SQLAlchemy's Enum() type stores a Python Enum member by its NAME
+            # ("EN_ATTENTE"), not its value ("en_attente") — unlike every
+            # other field in this column, the default here is written by raw
+            # SQL rather than through the ORM, so it must match that name-based
+            # convention or every row backfilled by it becomes unreadable by
+            # the ORM (a 500 on any endpoint that lists anomalies).
             connection.execute(text(
                 "ALTER TABLE anomalies ADD COLUMN resolution VARCHAR(16) "
-                "NOT NULL DEFAULT 'en_attente'"
+                "NOT NULL DEFAULT 'EN_ATTENTE'"
             ))
+
+    # One-time repair for databases that went through an earlier build of
+    # this migration, which mistakenly backfilled the lowercase enum VALUE
+    # ("en_attente") instead of the NAME ("EN_ATTENTE") — making those rows
+    # unreadable by the ORM. Safe to run every startup: it's a no-op once
+    # the data is clean, and harmless on a fresh database that never had the
+    # bad default.
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE anomalies SET resolution = 'EN_ATTENTE' WHERE resolution = 'en_attente'"))
+        connection.execute(text("UPDATE anomalies SET resolution = 'VALIDEE' WHERE resolution = 'validee'"))
+        connection.execute(text("UPDATE anomalies SET resolution = 'CORRIGEE' WHERE resolution = 'corrigee'"))
 
 
 app.include_router(imports.router)
