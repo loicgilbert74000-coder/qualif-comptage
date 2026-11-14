@@ -37,7 +37,12 @@ class Anomaly(Base):
     description: Mapped[str] = mapped_column(String(512))
     deviation_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     resolution: Mapped[AnomalyResolution] = mapped_column(
-        Enum(AnomalyResolution), default=AnomalyResolution.EN_ATTENTE, server_default="en_attente"
+        # server_default is the literal DDL value SQLAlchemy writes into
+        # CREATE TABLE / a raw insert that omits this column; Enum() reads a
+        # stored string back by the enum member's NAME, not its value, so
+        # this must be "EN_ATTENTE", not "en_attente" (see main.py's startup
+        # migration for the backstory on this exact mismatch).
+        Enum(AnomalyResolution), default=AnomalyResolution.EN_ATTENTE, server_default="EN_ATTENTE"
     )
 
     import_batch: Mapped["ImportBatch"] = relationship(back_populates="anomalies")
