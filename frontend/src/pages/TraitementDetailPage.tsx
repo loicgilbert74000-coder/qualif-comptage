@@ -5,6 +5,7 @@ import TopBar from "../components/TopBar";
 import QualityChart from "../components/QualityChart";
 import type { ChartZone } from "../components/QualityChart";
 import LoadingOverlay from "../components/LoadingOverlay";
+import CorrectionPreviewChart from "../components/CorrectionPreviewChart";
 import { api } from "../api/client";
 import type {
   ImportBatchDetail,
@@ -454,32 +455,9 @@ function DiagnosisPanel({
             <p className="mb-1.5 text-xs font-medium text-gray-500">Aperçu du correctif avant application :</p>
             {loadingPreview ? (
               <p className="text-xs text-gray-400">Calcul de l'aperçu…</p>
-            ) : preview.length === 0 ? (
-              <p className="text-xs text-gray-400">—</p>
             ) : (
-              <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200">
-                <table className="w-full text-left text-xs">
-                  <thead className="sticky top-0 bg-gray-50 text-gray-500">
-                    <tr>
-                      <th className="px-2 py-1 font-medium">Horodatage</th>
-                      <th className="px-2 py-1 font-medium">Valeur actuelle</th>
-                      <th className="px-2 py-1 font-medium">Valeur proposée</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {preview.map((p) => (
-                      <tr key={p.timestamp}>
-                        <td className="px-2 py-1 text-gray-600">{new Date(p.timestamp).toLocaleString("fr-CH")}</td>
-                        <td className="px-2 py-1 text-gray-400">
-                          {p.current_value === null ? "—" : p.current_value.toLocaleString("fr-CH")}
-                        </td>
-                        <td className="px-2 py-1 font-medium text-geneva-700">
-                          {p.proposed_value === null ? "—" : p.proposed_value.toLocaleString("fr-CH")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="rounded-lg border border-gray-200 bg-white p-3">
+                <CorrectionPreviewChart points={preview} />
               </div>
             )}
           </div>
