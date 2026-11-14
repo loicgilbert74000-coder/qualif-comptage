@@ -16,6 +16,10 @@ export interface ImportBatchSummary {
   quality_score: number | null;
   status: ImportStatus;
   created_at: string;
+  /** How many of this dossier's meters are already individually qualified
+   * (saved) — a dossier can be partly exportable before its overall
+   * status reaches "valide". */
+  qualified_meter_count: number;
 }
 
 export interface MeterQualitySummary {

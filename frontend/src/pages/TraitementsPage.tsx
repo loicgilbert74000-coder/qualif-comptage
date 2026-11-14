@@ -92,6 +92,15 @@ export default function TraitementsPage() {
                         >
                           Refuser
                         </button>
+                        {b.qualified_meter_count > 0 && (
+                          <Link
+                            to={`/traitements/${b.id}/export`}
+                            title={`${b.qualified_meter_count} compteur(s) déjà qualifié(s) dans ce dossier`}
+                            className="rounded-md border border-geneva-700 px-3 py-1.5 text-xs font-medium text-geneva-700 hover:bg-geneva-50"
+                          >
+                            Exporter ({b.qualified_meter_count}) →
+                          </Link>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -131,7 +140,7 @@ export default function TraitementsPage() {
                       <StatusBadge status={b.status} />
                     </td>
                     <td className="px-3 py-2">
-                      {b.status === "valide" && (
+                      {b.qualified_meter_count > 0 && (
                         <Link
                           to={`/traitements/${b.id}/export`}
                           className="rounded-md bg-geneva-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-geneva-800"

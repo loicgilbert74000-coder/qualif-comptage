@@ -56,13 +56,15 @@ export default function ExportPage() {
   }
 
   const { summary, building_name, meters } = detail;
-  const notReady = summary.status !== "valide";
+  const qualifiedMeters = meters.filter((m) => m.saved);
+  const pendingMeters = meters.filter((m) => !m.saved);
+  const notReady = qualifiedMeters.length === 0;
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-y-auto">
       <TopBar
         title={summary.name}
-        subtitle="Valider et exporter — toutes les courbes ont été traitées : exportez les données finales."
+        subtitle="Valider et exporter — les compteurs déjà qualifiés sont exportables dès maintenant, sans attendre les autres."
       />
       <StepIndicator current={3} />
 
@@ -73,8 +75,8 @@ export default function ExportPage() {
 
         {notReady ? (
           <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
-            Ce dossier n'est pas encore entièrement traité — toutes les courbes doivent être enregistrées avant de
-            pouvoir exporter.{" "}
+            Aucun compteur de ce dossier n'est encore qualifié — qualifiez au moins un compteur pour pouvoir
+            l'exporter.{" "}
             <Link to={`/traitements/${batchId}`} className="font-medium underline">
               Reprendre le traitement →
             </Link>
@@ -89,8 +91,10 @@ export default function ExportPage() {
                   <dd className="font-medium text-gray-800">{building_name ?? "—"}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-400">Compteurs</dt>
-                  <dd className="font-medium text-gray-800">{meters.length}</dd>
+                  <dt className="text-gray-400">Compteurs qualifiés</dt>
+                  <dd className="font-medium text-gray-800">
+                    {qualifiedMeters.length} / {meters.length}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-gray-400">Période</dt>
@@ -100,21 +104,55 @@ export default function ExportPage() {
                   </dd>
                 </div>
                 <div>
-                  <dt className="mb-1 text-gray-400">Qualité finale</dt>
+                  <dt className="mb-1 text-gray-400">Qualité du dossier</dt>
                   <dd>
-                    <QualityBar value={summary.quality_score} />
+                    <QualityBar value={summary.quality_score} invalid={summary.status === "refuse" || summary.status === "deja_traite"} />
                   </dd>
                 </div>
               </dl>
             </section>
 
+            <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h2 className="mb-3 text-sm font-semibold text-gray-900">Compteurs de ce dossier</h2>
+              <ul className="divide-y divide-gray-100 text-sm">
+                {meters.map((m) => (
+                  <li key={m.meter_id} className="flex items-center justify-between gap-3 py-2">
+                    <span className="text-gray-700">
+                      {m.meter_code}
+                      <span className="ml-2 text-xs text-gray-400">
+                        ({m.fluid_type} · {m.role})
+                      </span>
+                    </span>
+                    <span
+                      className={
+                        m.saved
+                          ? "rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700"
+                          : "rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500"
+                      }
+                    >
+                      {m.saved ? "Qualifié — inclus dans l'export" : "En attente de traitement"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {pendingMeters.length > 0 && (
+                <p className="mt-3 text-xs text-gray-400">
+                  {pendingMeters.length} compteur(s) pas encore qualifié(s) — ils rejoindront automatiquement
+                  l'export dès qu'ils seront traités.{" "}
+                  <Link to={`/traitements/${batchId}`} className="underline">
+                    Continuer le traitement →
+                  </Link>
+                </p>
+              )}
+            </section>
+
             {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
             <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-1 text-sm font-semibold text-gray-900">Exporter les données traitées</h2>
+              <h2 className="mb-1 text-sm font-semibold text-gray-900">Exporter les données qualifiées</h2>
               <p className="mb-4 text-sm text-gray-500">
-                Une ligne par relevé, pour chaque compteur du dossier — valeur finale (après reconstruction) et
-                valeur brute d'origine.
+                Une ligne par relevé, pour chacun des {qualifiedMeters.length} compteur(s) déjà qualifié(s) —
+                valeur finale (après reconstruction) et valeur brute d'origine.
               </p>
               <div className="flex gap-3">
                 <button

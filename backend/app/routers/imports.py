@@ -36,6 +36,18 @@ def _get_batch_or_404(db: Session, batch_id: UUID) -> ImportBatch:
     return batch
 
 
+def _batch_summary(db: Session, batch: ImportBatch) -> ImportBatchSummary:
+    """A dossier's export doesn't wait for every meter to be qualified —
+    each meter is exportable as soon as IT is saved. `qualified_meter_count`
+    carries that count on every summary so the export pages can show/offer
+    a dossier the moment it has at least one qualified meter, regardless of
+    the dossier's own overall status."""
+    qualified = (
+        db.query(MeterValidation.meter_id).filter(MeterValidation.import_batch_id == batch.id).distinct().count()
+    )
+    return ImportBatchSummary.model_validate(batch).model_copy(update={"qualified_meter_count": qualified})
+
+
 @router.post("", response_model=ImportBatchSummary)
 async def create_import(
     files: list[UploadFile] = File(...),
@@ -50,13 +62,13 @@ async def create_import(
         batch = import_service.ingest_files(db, payload, decimal_separator=decimal_separator, delimiter=delimiter)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return ImportBatchSummary.model_validate(batch)
+    return _batch_summary(db, batch)
 
 
 @router.get("", response_model=list[ImportBatchSummary])
 def list_imports(db: Session = Depends(get_db)):
     batches = db.query(ImportBatch).order_by(ImportBatch.created_at.desc()).all()
-    return [ImportBatchSummary.model_validate(b) for b in batches]
+    return [_batch_summary(db, b) for b in batches]
 
 
 @router.get("/{batch_id}", response_model=ImportBatchDetail)
@@ -100,7 +112,7 @@ def get_import(batch_id: UUID, db: Session = Depends(get_db)):
         )
 
     return ImportBatchDetail(
-        summary=ImportBatchSummary.model_validate(batch),
+        summary=_batch_summary(db, batch),
         building_name=building.name if building else None,
         meters=summaries,
     )
@@ -235,14 +247,14 @@ def reanalyze(batch_id: UUID, db: Session = Depends(get_db)):
     # quality index with a misleading 0%.
     if batch.status not in (ImportStatus.REFUSE, ImportStatus.DEJA_TRAITE):
         import_service.run_quality_analysis(db, batch)
-    return ImportBatchSummary.model_validate(batch)
+    return _batch_summary(db, batch)
 
 
 @router.post("/{batch_id}/reject", response_model=ImportBatchSummary)
 def reject(batch_id: UUID, db: Session = Depends(get_db)):
     batch = _get_batch_or_404(db, batch_id)
     batch = import_service.reject_batch(db, batch)
-    return ImportBatchSummary.model_validate(batch)
+    return _batch_summary(db, batch)
 
 
 @router.post("/{batch_id}/validate", response_model=ValidateResponse)
@@ -270,20 +282,21 @@ def validate_meter(batch_id: UUID, meter_id: UUID, db: Session = Depends(get_db)
 
 @router.get("/{batch_id}/export")
 def export_batch(batch_id: UUID, format: str = "csv", db: Session = Depends(get_db)):
-    """Step 3 of the wizard ("Valider et exporter"): downloads the fully
-    treated batch as CSV or JSON. Only offered once every meter has been
-    saved (status VALIDE) — before that there's no final, reconciled data
-    to hand out yet."""
+    """Step 3 of the wizard ("Valider et exporter"): downloads whichever
+    meters of this dossier are ALREADY qualified as CSV or JSON. Doesn't
+    wait for the whole dossier to reach status VALIDE — a meter is
+    exportable the moment it's individually saved, so this grows one meter
+    at a time as more get qualified, rather than all-or-nothing."""
     batch = _get_batch_or_404(db, batch_id)
-    if batch.status != ImportStatus.VALIDE:
-        raise HTTPException(
-            400,
-            "Ce dossier n'est pas encore entièrement traité — enregistrez toutes les courbes avant d'exporter.",
-        )
     if format not in ("csv", "json"):
         raise HTTPException(400, "Format d'export invalide : 'csv' ou 'json' attendu.")
 
     rows = import_service.export_rows(db, batch)
+    if not rows:
+        raise HTTPException(
+            400,
+            "Aucun compteur qualifié pour l'instant dans ce dossier — qualifiez au moins un compteur avant d'exporter.",
+        )
     safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", batch.name).strip("_") or "export"
 
     if format == "json":

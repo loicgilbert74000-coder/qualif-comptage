@@ -16,6 +16,10 @@ class ImportBatchSummary(BaseModel):
     quality_score: float | None
     status: str
     created_at: datetime
+    # How many of this dossier's meters are already individually qualified
+    # (saved) — lets the export pages offer a dossier as soon as it has at
+    # least one, instead of waiting for the whole dossier to be finished.
+    qualified_meter_count: int = 0
 
     class Config:
         from_attributes = True

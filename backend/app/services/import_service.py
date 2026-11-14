@@ -817,16 +817,25 @@ def reject_batch(db: Session, batch: ImportBatch) -> ImportBatch:
 
 
 def export_rows(db: Session, batch: ImportBatch) -> list[dict]:
-    """Flat row-per-reading view of a fully-treated batch, ready to hand to
-    a CSV or JSON serializer — step 3 of the wizard ("Valider et exporter").
-    `valeur` is the final (possibly reconstructed) value; `valeur_brute`
-    preserves what was actually in the source file, even where the
-    reconstruction engine has since overwritten `valeur`."""
+    """Flat row-per-reading view of this dossier's QUALIFIED meters only,
+    ready to hand to a CSV or JSON serializer — step 3 of the wizard
+    ("Valider et exporter"). Export doesn't wait for the whole dossier to
+    be finished: a meter is included the moment it has its own
+    MeterValidation row, regardless of whether other meters in the same
+    dossier are still pending. `valeur` is the final (possibly
+    reconstructed) value; `valeur_brute` preserves what was actually in
+    the source file, even where the reconstruction engine has since
+    overwritten `valeur`."""
+    qualified_meter_ids = [
+        row[0] for row in db.query(MeterValidation.meter_id).filter(MeterValidation.import_batch_id == batch.id)
+    ]
+    if not qualified_meter_ids:
+        return []
     rows = (
         db.query(Reading, Meter, Building)
         .join(Meter, Meter.id == Reading.meter_id)
         .join(Building, Building.id == Meter.building_id)
-        .filter(Reading.import_batch_id == batch.id)
+        .filter(Reading.import_batch_id == batch.id, Reading.meter_id.in_(qualified_meter_ids))
         .order_by(Building.name, Meter.code, Reading.timestamp)
         .all()
     )
