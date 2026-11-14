@@ -70,6 +70,45 @@ index. Les en-têtes `consommation_kwh`, `variation_kwh`, `volume_m3` et
 du fichier `cas2-gaz-sig-horaire` est traitée comme une consommation en m³,
 conformément au guide de ce jeu de données, malgré son unité affichée erronée.
 
+### Critères de détection et exemples
+
+Les seuils comparent chaque mesure à l'historique du même mois et du même
+créneau d'usage (jour de semaine/heure). Si l'historique comparable est trop
+court, le moteur n'invente pas de référence et ne déclenche pas les règles
+saisonnières.
+
+| Critère | Règle | Exemple illustratif |
+|---|---|---|
+| Index en baisse | Toute valeur d'index inférieure à la précédente est signalée. Un index remis à zéro n'est exempté que si `service_start` confirme un remplacement ce jour-là. | `12 540 → 87` sans remplacement déclaré : anomalie à vérifier. |
+| Index plat en saison active | Au moins 4 pas consécutifs sans hausse, alors que 3 pas comparables ou plus ont déjà augmenté dans ce créneau saisonnier. | Index identique à `102,4` pendant quatre quarts d'heure d'un créneau où les hivers précédents progressaient. |
+| Valeur nulle | Une ligne présente dont la valeur est vide/nulle est distinguée d'un relevé entièrement absent. | `2025-02-03 10:00;` : `valeur_nulle`; une ligne manquante à 10:15 : `absence_releve`. |
+| Horodatage irrégulier | Les intervalles observés sont comparés au pas le plus fréquent. Un écart égal à plusieurs pas devient un manque; un décalage fractionnaire est un horodatage irrégulier. Les pas de 15 et 30 minutes sont reconnus. | Pas attendu de 15 min : `00:00, 00:15, 00:32` est décalé; `00:00, 00:15, 00:45` indique le quart d'heure manquant. |
+| Consommation négative | Une consommation négative est signalée, selon le réglage existant `allow_negative_values`. | `-2,3 kWh` sur une période. |
+| Zéro en saison active | Un zéro est suspect si au moins 4 observations comparables de ce mois/créneau sont positives. Les nuits/week-ends habituellement nuls servent de référence séparée. | Même lundi à 08:00 en janvier : historique `8,1; 7,7; 8,5; 8,0 kWh`, mesure `0`. |
+| Consommation anormalement basse/haute | Il faut au moins 6 références comparables. Le seuil haut est `max(médiane + 6×1,4826×MAD, 3×médiane)`; le seuil bas est médiane moins six écarts robustes (plancher à zéro; si l'historique est parfaitement constant, seuil à 50 % de la médiane). | Historique stable médian `10 kWh` et MAD `0` : `3 kWh` est bas (<5), `35 kWh` est haut (>30). |
+
+Une baisse d'index est volontairement présentée comme « remise à zéro ou
+remplacement à vérifier », pas comme une erreur certaine : pour accepter la
+rupture comme remplacement de compteur, il faut renseigner sa date de mise en
+service (`service_start`). Ces règles repèrent des points à contrôler; elles
+ne remplacent pas la validation métier, notamment pour les profils saisonniers
+ou les changements d'horaires d'exploitation.
+
+Les seuils sont réglables dans la fenêtre **Critères de détection** de la
+barre latérale. Les paramètres statistiques configurables sont le nombre
+minimum de références comparables, le multiplicateur MAD, le ratio extrême,
+le nombre de valeurs positives nécessaire pour considérer un créneau actif,
+et la tolérance d'horodatage. Les changements s'appliquent au prochain import
+ou à la prochaine réanalyse.
+
+Cette analyse historique peut révéler un profil inhabituel d'un compteur.
+L'étape suivante pour mieux suspecter une panne de chaîne d'acquisition est
+de rechercher des changements persistants de profil et des ruptures communes
+à plusieurs compteurs partageant un même automate ou horodatage. Ces alertes
+doivent rester des signaux à examiner : une météo atypique, une fermeture,
+un changement d'occupation ou une consigne modifiée peuvent aussi changer le
+profil mesuré.
+
 ## Exécutable autonome (sans Docker)
 
 Un pipeline GitHub Actions (`.github/workflows/build-desktop.yml`) construit

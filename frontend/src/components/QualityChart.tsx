@@ -14,7 +14,7 @@ const MIN_VISIBLE_POINTS = 5;
 
 function formatTick(ts: string, granularity: string) {
   const d = new Date(ts);
-  if (granularity === "horaire") return d.toLocaleDateString("fr-CH", { day: "2-digit", month: "2-digit" });
+  if (["15min", "30min", "horaire"].includes(granularity)) return d.toLocaleString("fr-CH", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: granularity === "horaire" ? undefined : "2-digit" });
   if (granularity === "mensuelle") return d.toLocaleDateString("fr-CH", { month: "short", year: "2-digit" });
   return d.toLocaleDateString("fr-CH", { day: "2-digit", month: "short" });
 }

@@ -31,7 +31,7 @@ class Anomaly(Base):
     import_batch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_batches.id", ondelete="CASCADE"))
     meter_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meters.id", ondelete="CASCADE"))
     type: Mapped[AnomalyType] = mapped_column(Enum(AnomalyType))
-    subtype: Mapped[str] = mapped_column(String(64))  # pic, chute, valeur_negative, palier_suspect, absence_releve
+    subtype: Mapped[str] = mapped_column(String(64))  # See quality_engine anomaly criteria.
     period_start: Mapped[datetime] = mapped_column(DateTime)
     period_end: Mapped[datetime] = mapped_column(DateTime)
     description: Mapped[str] = mapped_column(String(512))

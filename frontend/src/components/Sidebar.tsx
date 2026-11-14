@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
+import QualityCriteriaDialog from "./QualityCriteriaDialog";
 
 // Pas d'entrée de menu pour "Traitements & reconstructions" : cette étape
 // se déclenche depuis le flux de qualification (après validation du
@@ -15,6 +16,7 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const [version, setVersion] = useState<string | null>(null);
+  const [criteriaOpen, setCriteriaOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/health")
@@ -62,6 +64,14 @@ export default function Sidebar() {
           className="h-28 w-full object-cover object-bottom opacity-90"
         />
         <div className="px-3 pb-5 pt-3">
+          <button
+            type="button"
+            onClick={() => setCriteriaOpen(true)}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-white/5 hover:text-white"
+          >
+            <IconGear className="h-5 w-5 shrink-0" />
+            <span>Critères de détection</span>
+          </button>
           <a
             href="#"
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-white/5 hover:text-white"
@@ -72,6 +82,7 @@ export default function Sidebar() {
           {version && <p className="mt-2 px-3 text-[11px] text-slate-500">{version}</p>}
         </div>
       </div>
+      <QualityCriteriaDialog open={criteriaOpen} onClose={() => setCriteriaOpen(false)} />
     </aside>
   );
 }
