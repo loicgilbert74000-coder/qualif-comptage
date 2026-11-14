@@ -686,6 +686,11 @@ def _anomaly_series_context(db: Session, batch: ImportBatch, anomaly: Anomaly):
     )
     period_ts = sorted(expected_index[period_mask])
 
+    environmental_features = None
+    if app_settings.geneva_demo_weather and meter.code.upper().startswith("DEMO-GENEVE"):
+        from app.services.geneva_weather import load_geneva_demo_weather
+        environmental_features = load_geneva_demo_weather(expected_index, granularity)
+
     return {
         "meter": meter,
         "readings": readings,
@@ -695,19 +700,97 @@ def _anomaly_series_context(db: Session, batch: ImportBatch, anomaly: Anomaly):
         "aligned": aligned,
         "bad_ts": bad_ts,
         "period_ts": period_ts,
+        "environmental_features": environmental_features,
     }
 
 
 def correction_options_for_anomaly(db: Session, anomaly: Anomaly) -> list[dict]:
-    """The reconstruction techniques worth offering as a choice for this
-    anomaly's meter — tailored by fluid/meter type (see
-    reconstruction_engine.available_correction_methods)."""
+    """Simulate each compatible correction, rank by the resulting series quality,
+    and mark only quality-improving proposals as eligible for application.
+    The score is the existing 0-100 series-quality metric, not a calibrated
+    statistical probability.
+    """
     meter = db.query(Meter).get(anomaly.meter_id)
-    if meter is None:
+    batch = db.query(ImportBatch).get(anomaly.import_batch_id)
+    if meter is None or batch is None:
         return []
-    from app.services.reconstruction_engine import available_correction_methods
+    ctx = _anomaly_series_context(db, batch, anomaly)
+    if ctx is None:
+        return []
 
-    return available_correction_methods(meter.measurement_kind, meter.role)
+    from app.services.reconstruction_engine import available_correction_methods
+    from app.services.quality_engine import analyze_series
+
+    cfg = get_org_settings(db)
+    has_weather = ctx.get("environmental_features") is not None
+    options = available_correction_methods(
+        meter.measurement_kind,
+        meter.role,
+        fluid_type=meter.fluid_type,
+        anomaly_subtype=anomaly.subtype,
+        has_weather=has_weather,
+    )
+
+    def quality_score(values: pd.Series) -> float:
+        frame = pd.DataFrame({"timestamp": ctx["expected_index"], "value": values.to_numpy()})
+        return analyze_series(
+            meter.code, frame,
+            spike_deviation_pct=cfg.spike_deviation_pct,
+            drop_deviation_pct=cfg.drop_deviation_pct,
+            reference_window_periods=cfg.reference_window_periods,
+            flatline_min_run=cfg.flatline_min_run,
+            allow_negative_values=cfg.allow_negative_values,
+            measurement_kind=meter.measurement_kind,
+            service_start=meter.service_start,
+            historical_min_points=cfg.historical_min_points,
+            robust_mad_multiplier=cfg.robust_mad_multiplier,
+            historical_extreme_ratio=cfg.historical_extreme_ratio,
+            zero_active_min_history=cfg.zero_active_min_history,
+            seasonal_activity_min_history=cfg.seasonal_activity_min_history,
+            timestamp_tolerance_pct=cfg.timestamp_tolerance_pct,
+        ).quality_pct
+
+    original_score = quality_score(ctx["aligned"])
+    ranked = []
+    for order, option in enumerate(options):
+        result = reconstruct_series(
+            ctx["expected_index"], ctx["aligned"], ctx["bad_ts"], ctx["granularity"],
+            method=option["method"], environmental_features=ctx.get("environmental_features"),
+        )
+        required_targets = [
+            ts for ts in ctx["period_ts"]
+            if ts in ctx["bad_ts"] or pd.isna(ctx["aligned"].get(ts))
+        ]
+        covered = bool(required_targets) and all(
+            result.methods_used.get(ts) == option["method"] for ts in required_targets
+        )
+        simulated = ctx["aligned"].copy()
+        for ts in required_targets:
+            if result.methods_used.get(ts) == option["method"]:
+                simulated.loc[ts] = result.values.loc[ts]
+        score = quality_score(simulated)
+        gain = round(score - original_score, 1)
+        option.update({
+            "original_confidence_pct": original_score,
+            "confidence_pct": score,
+            "confidence_gain_pct": gain,
+            "model_fit_pct": result.model_fit_pct,
+            "eligible": covered and gain > 0,
+            "confidence_basis": "Indice de cohérence global de la série, recalculé avec les critères actifs; ce n’est pas une probabilité statistique.",
+            "_order": order,
+        })
+        ranked.append(option)
+    ranked.sort(key=lambda item: (
+        not item["eligible"],
+        -item["confidence_gain_pct"],
+        -item["confidence_pct"],
+        -(item["model_fit_pct"] if item["model_fit_pct"] is not None else -1.0),
+        item["_order"],
+    ))
+    for rank, option in enumerate(ranked, 1):
+        option["rank"] = rank
+        option.pop("_order", None)
+    return ranked
 
 
 def preview_correction(db: Session, batch: ImportBatch, anomaly: Anomaly, method: str) -> list[dict]:
@@ -719,7 +802,8 @@ def preview_correction(db: Session, batch: ImportBatch, anomaly: Anomaly, method
         return []
 
     result = reconstruct_series(
-        ctx["expected_index"], ctx["aligned"], ctx["bad_ts"], ctx["granularity"], method=method
+        ctx["expected_index"], ctx["aligned"], ctx["bad_ts"], ctx["granularity"], method=method,
+        environmental_features=ctx.get("environmental_features"),
     )
 
     points = []
@@ -738,7 +822,8 @@ def preview_correction(db: Session, batch: ImportBatch, anomaly: Anomaly, method
 
 
 def resolve_anomaly(
-    db: Session, batch: ImportBatch, anomaly: Anomaly, resolution: str, method: str | None = None
+    db: Session, batch: ImportBatch, anomaly: Anomaly, resolution: str,
+    method: str | None = None, comment: str | None = None,
 ) -> dict:
     """Step 2 of the wizard ("Traiter et reconstruire"): record the
     person's decision for one flagged zone.
@@ -753,15 +838,39 @@ def resolve_anomaly(
       the automatic profil-type -> interpolation cascade is used, as
       before."""
     resolution_enum = AnomalyResolution(resolution)
+    comment = (comment or "").strip()
+    if len(comment) > 1000:
+        raise ValueError("Le commentaire ne peut pas dépasser 1 000 caractères.")
+    if resolution_enum == AnomalyResolution.VALIDEE and not comment:
+        raise ValueError("Un commentaire est obligatoire pour valider l’anomalie en l’état.")
+
+    selected_option = None
+    if resolution_enum == AnomalyResolution.CORRIGEE:
+        options = correction_options_for_anomaly(db, anomaly)
+        selected_option = next((item for item in options if item["method"] == method), None) if method else None
+        if selected_option is None:
+            selected_option = next((item for item in options if item["eligible"]), None)
+        if selected_option is None or not selected_option["eligible"]:
+            raise ValueError("Aucun correctif proposé n’améliore la fiabilité estimée de la série.")
+        method = selected_option["method"]
+
     anomaly.resolution = resolution_enum
     stats: dict = {"anomaly_id": str(anomaly.id), "resolution": resolution}
+    if comment:
+        stats["comment"] = comment
 
     if resolution_enum == AnomalyResolution.CORRIGEE:
+        stats.update({
+            "series_confidence_before_pct": selected_option["original_confidence_pct"],
+            "series_confidence_after_pct": selected_option["confidence_pct"],
+            "series_confidence_gain_pct": selected_option["confidence_gain_pct"],
+        })
         ctx = _anomaly_series_context(db, batch, anomaly)
         if ctx is not None:
             meter = ctx["meter"]
             result = reconstruct_series(
-                ctx["expected_index"], ctx["aligned"], ctx["bad_ts"], ctx["granularity"], method=method
+                ctx["expected_index"], ctx["aligned"], ctx["bad_ts"], ctx["granularity"], method=method,
+                environmental_features=ctx.get("environmental_features"),
             )
 
             n_applied = 0

@@ -73,6 +73,13 @@ export interface CorrectionOption {
   method: string;
   label: string;
   description: string;
+  rank: number;
+  original_confidence_pct: number;
+  confidence_pct: number;
+  confidence_gain_pct: number;
+  model_fit_pct: number | null;
+  eligible: boolean;
+  confidence_basis: string;
 }
 
 export interface CorrectionPreviewPoint {

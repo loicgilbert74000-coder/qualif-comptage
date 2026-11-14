@@ -10,3 +10,13 @@ body {
   background-color: #f4f6f9;
   color: #111827;
 }
+
+.qualif-ai-halo {
+  border-color: rgb(196 181 253 / 0.95) !important;
+  box-shadow: 0 0 0 1px rgb(167 139 250 / 0.24), 0 0 16px rgb(139 92 246 / 0.17);
+}
+
+.qualif-ai-badge {
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  color: #6d28d9;
+}

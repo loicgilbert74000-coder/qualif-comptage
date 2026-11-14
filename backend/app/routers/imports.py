@@ -182,7 +182,9 @@ def resolve_anomaly(batch_id: UUID, anomaly_id: UUID, payload: ResolveAnomalyIn,
     if payload.resolution not in ("validee", "corrigee"):
         raise HTTPException(400, "Résolution invalide : 'validee' ou 'corrigee' attendu.")
     try:
-        import_service.resolve_anomaly(db, batch, anomaly, payload.resolution, method=payload.method)
+        import_service.resolve_anomaly(
+            db, batch, anomaly, payload.resolution, method=payload.method, comment=payload.comment
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     meter = db.query(Meter).get(anomaly.meter_id)

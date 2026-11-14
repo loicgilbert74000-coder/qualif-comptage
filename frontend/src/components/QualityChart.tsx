@@ -61,6 +61,10 @@ export interface PreviewPoint {
   proposed_value: number | null;
 }
 
+export interface AIPreviewPoint extends PreviewPoint {
+  current_value?: number | null;
+}
+
 // Validated categorical palette, slot 2 (orange) — passes
 // scripts/validate_palette.js "#2a78d6,#eb6834" --mode light against the
 // chart's existing blue value line. Dashed stroke is the secondary
@@ -86,6 +90,10 @@ interface Props {
    * timestamps that have no materialized Reading row (true gaps).
    */
   previewPoints?: PreviewPoint[];
+  /** Demonstration-only Qualif IA estimates over anomaly slots. */
+  aiPreviewPoints?: AIPreviewPoint[];
+  /** Selected zone outlined as the current Qualif IA analysis target. */
+  aiZoneId?: string | null;
 }
 
 export default function QualityChart({
@@ -97,6 +105,8 @@ export default function QualityChart({
   selectedZoneId = null,
   onSelectZone,
   previewPoints = [],
+  aiPreviewPoints = [],
+  aiZoneId = null,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -350,7 +360,10 @@ export default function QualityChart({
     const previewFinite = previewPoints
       .map((p) => p.proposed_value)
       .filter((v): v is number => v !== null && Number.isFinite(v));
-    const allFinite = finite.concat(previewFinite);
+    const aiPreviewFinite = aiPreviewPoints
+      .map((p) => p.proposed_value)
+      .filter((v): v is number => v !== null && Number.isFinite(v));
+    const allFinite = finite.concat(previewFinite, aiPreviewFinite);
     let yMin = allFinite.length ? Math.min(...allFinite) : 0;
     let yMax = allFinite.length ? Math.max(...allFinite) : 1;
     if (yMin === yMax) {
@@ -363,6 +376,7 @@ export default function QualityChart({
 
     const xAt = (i: number) => plotLeft + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
     const yAt = (v: number) => plotTop + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+    const visibleTimes = visiblePoints.map((point) => +new Date(point.timestamp));
 
     // horizontal gridlines + y-axis tick labels
     ctx.font = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
@@ -430,6 +444,25 @@ export default function QualityChart({
           ctx.fillRect(x1, plotTop, x2 - x1, plotH);
           bandStart = null;
         }
+      }
+    }
+
+    if (aiZoneId) {
+      const zone = zonesPxRef.current.find((candidate) => candidate.id === aiZoneId);
+      if (zone) {
+        ctx.save();
+        ctx.strokeStyle = "#8b5cf6";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([3, 3]);
+        ctx.shadowColor = "rgba(139,92,246,0.55)";
+        ctx.shadowBlur = 10;
+        ctx.strokeRect(zone.x1 - 1, plotTop + 1, zone.x2 - zone.x1 + 2, plotH - 2);
+        ctx.restore();
+        ctx.fillStyle = "#6d28d9";
+        ctx.font = "10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillText("Qualif IA", Math.max(plotLeft, zone.x1 + 4), plotTop + 4);
       }
     }
 
@@ -520,6 +553,61 @@ export default function QualityChart({
       }
     }
 
+    // Qualif IA demonstration layer: purple markers show model estimates for
+    // every flagged slot. Short connectors only join adjacent intervals, so
+    // sparse anomaly samples are not presented as a continuous forecast.
+    if (aiPreviewPoints.length > 0) {
+      const pointStepMs = ({
+        "15min": 15 * 60 * 1000,
+        "30min": 30 * 60 * 1000,
+        horaire: 60 * 60 * 1000,
+        journaliere: 24 * 60 * 60 * 1000,
+        mensuelle: 32 * 24 * 60 * 60 * 1000,
+      } as Record<string, number>)[granularity] ?? 24 * 60 * 60 * 1000;
+      const aiPositions = aiPreviewPoints
+        .filter((point) => point.proposed_value !== null && Number.isFinite(point.proposed_value))
+        .map((point) => {
+          const timestamp = +new Date(point.timestamp);
+          const index = lowerBound(visibleTimes, timestamp);
+          if (index >= visibleTimes.length || Math.abs(visibleTimes[index] - timestamp) > 60_000) return null;
+          return { timestamp, x: xAt(index), y: yAt(point.proposed_value as number) };
+        })
+        .filter((point): point is { timestamp: number; x: number; y: number } => point !== null);
+
+      ctx.save();
+      ctx.strokeStyle = "#8b5cf6";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([4, 3]);
+      ctx.shadowColor = "rgba(139,92,246,0.65)";
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      let previous: { timestamp: number; x: number; y: number } | null = null;
+      for (const point of aiPositions) {
+        if (previous && point.timestamp - previous.timestamp <= pointStepMs * 1.5) {
+          ctx.moveTo(previous.x, previous.y);
+          ctx.lineTo(point.x, point.y);
+        }
+        previous = point;
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.shadowBlur = 8;
+      for (const point of aiPositions) {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 7, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(139,92,246,0.16)";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#7c3aed";
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     // x-axis tick labels, spaced so they don't overlap
     ctx.fillStyle = "#6b7280";
     ctx.textAlign = "center";
@@ -562,7 +650,7 @@ export default function QualityChart({
     ro.observe(wrap);
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visiblePoints, unit, granularity, hover, zoneIndexRanges, selectedZoneId, start, previewPoints, zones]);
+  }, [visiblePoints, unit, granularity, hover, zoneIndexRanges, selectedZoneId, start, previewPoints, aiPreviewPoints, aiZoneId, zones]);
 
   const hoverTooltip = useMemo(() => {
     if (!hover) return null;
@@ -647,6 +735,14 @@ export default function QualityChart({
               <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-blue-500 bg-blue-500/10" /> Corrigée
             </span>
           </>
+        )}
+        {aiPreviewPoints.length > 0 && (
+          <span className="flex items-center gap-1.5">
+            <svg width="16" height="8" aria-hidden>
+              <line x1="0" y1="4" x2="16" y2="4" stroke="#8b5cf6" strokeWidth="2.5" strokeDasharray="4 3" />
+            </svg>
+            Qualif IA · profil simulé
+          </span>
         )}
         {previewPoints.length > 0 && (
           <span className="flex items-center gap-1.5">

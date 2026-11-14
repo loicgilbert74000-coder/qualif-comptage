@@ -47,12 +47,13 @@ export const api = {
 
   getAnomalies: (batchId: string) => request<AnomalyOut[]>(`/imports/${batchId}/anomalies`),
 
-  resolveAnomaly: (batchId: string, anomalyId: string, resolution: "validee" | "corrigee", method?: string) =>
-    request<AnomalyOut>(`/imports/${batchId}/anomalies/${anomalyId}/resolve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resolution, method: method ?? null }),
-    }),
+  resolveAnomaly: (
+    batchId: string, anomalyId: string, resolution: "validee" | "corrigee", method?: string, comment?: string
+  ) => request<AnomalyOut>(`/imports/${batchId}/anomalies/${anomalyId}/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resolution, method: method ?? null, comment: comment ?? null }),
+  }),
 
   getCorrectionOptions: (batchId: string, anomalyId: string) =>
     request<CorrectionOption[]>(`/imports/${batchId}/anomalies/${anomalyId}/correction-options`),

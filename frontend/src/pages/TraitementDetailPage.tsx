@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import clsx from "clsx";
 import TopBar from "../components/TopBar";
 import StepIndicator from "../components/StepIndicator";
 import QualityChart from "../components/QualityChart";
-import type { ChartZone, PreviewPoint } from "../components/QualityChart";
+import QualifAIChatDialog from "../components/QualifAIChatDialog";
+import { useQualifAI } from "../context/QualifAIContext";
+import type { AIPreviewPoint, ChartZone, PreviewPoint } from "../components/QualityChart";
 import LoadingOverlay from "../components/LoadingOverlay";
 import { api } from "../api/client";
 import type {
@@ -35,6 +37,7 @@ export default function TraitementDetailPage() {
   // we were sent here from there — see DetailedAnalysis.goToTraitement().
   // Treated first instead of defaulting to the batch's first meter.
   const incomingMeterId = (location.state as { meterId?: string } | null)?.meterId;
+  const qualifAI = useQualifAI();
 
   const [detail, setDetail] = useState<ImportBatchDetail | null>(null);
   const [anomalies, setAnomalies] = useState<AnomalyOut[]>([]);
@@ -43,6 +46,10 @@ export default function TraitementDetailPage() {
   const [loadingSeries, setLoadingSeries] = useState(false);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [previewPoints, setPreviewPoints] = useState<PreviewPoint[]>([]);
+  const [aiDemoPoints, setAiDemoPoints] = useState<AIPreviewPoint[]>([]);
+  const [aiDemoFitPct, setAiDemoFitPct] = useState<number | null>(null);
+  const [aiDemoLoading, setAiDemoLoading] = useState(false);
+  const autoSelectedAIMeter = useRef<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // `resolve:<id>` | "finalize"
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -54,8 +61,10 @@ export default function TraitementDetailPage() {
     setAnomalies(a);
     setSelectedMeterId((cur) => {
       if (cur) return cur;
-      const preferred = incomingMeterId && d.meters.some((m) => m.meter_id === incomingMeterId) ? incomingMeterId : null;
-      return preferred ?? d.meters[0]?.meter_id ?? "";
+      const incomingIsAIDemo = d.meters.some((meter) => meter.meter_id === incomingMeterId && meter.meter_code.toUpperCase().startsWith("DEMO-GENEVE-IA-"));
+      const preferred = incomingMeterId && d.meters.some((m) => m.meter_id === incomingMeterId) && !incomingIsAIDemo ? incomingMeterId : null;
+      const demoPV = d.meters.find((meter) => meter.meter_code.toUpperCase().startsWith("DEMO-GENEVE-IA-PV"))?.meter_id;
+      return preferred ?? demoPV ?? d.meters[0]?.meter_id ?? "";
     });
   }
 
@@ -87,7 +96,66 @@ export default function TraitementDetailPage() {
     () => anomalies.filter((a) => a.meter_id === selectedMeterId),
     [anomalies, selectedMeterId]
   );
+  const isGenevaAIDemo = selectedMeter?.meter_code.toUpperCase().startsWith("DEMO-GENEVE-IA-") ?? false;
+  const showQualifAIDemo = isGenevaAIDemo && qualifAI.enabled && qualifAI.suggestionsEnabled;
+  const aiDemoCloseCount = aiDemoPoints.filter((point) =>
+    typeof point.current_value === "number" && typeof point.proposed_value === "number"
+    && Math.abs(point.proposed_value - point.current_value) <= Math.max(Math.abs(point.current_value), 0.1) * 0.25
+  ).length;
+  const aiDemoReviewCount = Math.max(aiDemoPoints.length - aiDemoCloseCount, 0);
   const selectedAnomaly = anomalies.find((a) => a.id === selectedZoneId) ?? null;
+
+  // The dedicated demo file opens on its first anomaly so the audience sees
+  // both the base signal and the Qualif IA overlay immediately.
+  useEffect(() => {
+    if (!isGenevaAIDemo || !selectedMeterId || autoSelectedAIMeter.current === selectedMeterId) return;
+    const pending = meterAnomalies.filter((anomaly) => anomaly.resolution === "en_attente");
+    const firstPending = pending.find((anomaly) => ["pic", "consommation_haute"].includes(anomaly.subtype)) ?? pending[0];
+    if (!firstPending) return;
+    autoSelectedAIMeter.current = selectedMeterId;
+    setSelectedZoneId(firstPending.id);
+    setPreviewPoints([]);
+  }, [isGenevaAIDemo, selectedMeterId, meterAnomalies]);
+
+  // Demonstration-only Qualif IA layer: request the Geneva-adjusted profile
+  // for every base anomaly, then display its estimates together on the chart.
+  useEffect(() => {
+    if (!batchId || !showQualifAIDemo || meterAnomalies.length === 0) {
+      setAiDemoPoints([]);
+      setAiDemoFitPct(null);
+      setAiDemoLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAiDemoLoading(true);
+    Promise.all(meterAnomalies.map(async (anomaly) => {
+      try {
+        const options = await api.getCorrectionOptions(batchId, anomaly.id);
+        const weatherOption = options
+          .filter((option) => option.method.startsWith("meteo_") && option.model_fit_pct !== null)
+          .sort((a, b) => (b.model_fit_pct ?? -1) - (a.model_fit_pct ?? -1))[0];
+        if (!weatherOption) return { points: [] as AIPreviewPoint[], fit: null as number | null };
+        const preview = await api.getCorrectionPreview(batchId, anomaly.id, weatherOption.method);
+        return {
+          points: preview.map((point) => ({
+            timestamp: point.timestamp,
+            proposed_value: point.proposed_value,
+            current_value: point.current_value,
+          })),
+          fit: weatherOption.model_fit_pct,
+        };
+      } catch {
+        return { points: [] as AIPreviewPoint[], fit: null as number | null };
+      }
+    })).then((results) => {
+      if (cancelled) return;
+      setAiDemoPoints(results.flatMap((result) => result.points).sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
+      const fits = results.map((result) => result.fit).filter((fit): fit is number => fit !== null);
+      setAiDemoFitPct(fits.length ? Math.round(fits.reduce((sum, fit) => sum + fit, 0) / fits.length * 10) / 10 : null);
+      setAiDemoLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [batchId, showQualifAIDemo, selectedMeterId, meterAnomalies]);
 
   const pendingCount = anomalies.filter((a) => a.resolution === "en_attente").length;
 
@@ -130,12 +198,26 @@ export default function TraitementDetailPage() {
     setPreviewPoints([]);
   }
 
-  async function resolve(resolution: "validee" | "corrigee", method?: string) {
+  async function resolve(resolution: "validee" | "corrigee", method?: string, comment?: string) {
     if (!batchId || !selectedAnomaly) return;
     setBusy(`resolve:${selectedAnomaly.id}`);
     setError(null);
     try {
-      await api.resolveAnomaly(batchId, selectedAnomaly.id, resolution, method);
+      const decisionComment = comment?.trim() || (
+        resolution === "validee" ? qualifAI.getLatestUserMessage(selectedAnomaly.id) : undefined
+      );
+      await api.resolveAnomaly(batchId, selectedAnomaly.id, resolution, method, decisionComment);
+      const meter = detail?.meters.find((item) => item.meter_id === selectedAnomaly.meter_id);
+      qualifAI.recordDecision({
+        anomalyId: selectedAnomaly.id,
+        meterCode: selectedAnomaly.meter_code,
+        fluidType: meter?.fluid_type ?? "inconnu",
+        role: meter?.role ?? "général",
+        subtype: selectedAnomaly.subtype,
+        decision: resolution,
+        method: resolution === "corrigee" ? method : undefined,
+        comment: decisionComment,
+      });
       await Promise.all([refresh(), loadSeries()]);
       selectZone(null);
     } catch (e) {
@@ -276,8 +358,15 @@ export default function TraitementDetailPage() {
             <DiagnosisPanel
               batchId={batchId ?? ""}
               anomaly={selectedAnomaly}
+              context={{
+                anomalyId: selectedAnomaly.id,
+                meterCode: selectedAnomaly.meter_code,
+                fluidType: selectedMeter?.fluid_type ?? "inconnu",
+                role: selectedMeter?.role ?? "général",
+                subtype: selectedAnomaly.subtype,
+              }}
               busy={busy === `resolve:${selectedAnomaly.id}`}
-              onValidate={() => resolve("validee")}
+              onValidate={(comment) => resolve("validee", undefined, comment)}
               onCorrect={(method) => resolve("corrigee", method)}
               onPreviewChange={setPreviewPoints}
             />
@@ -293,6 +382,24 @@ export default function TraitementDetailPage() {
           )}
         </section>
 
+        {showQualifAIDemo && (
+          <div className="qualif-ai-halo flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-violet-50/70 px-4 py-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-violet-800">
+                <span aria-hidden>✦</span>
+                <span>Simulation de démonstration Qualif IA · Genève</span>
+                {aiDemoFitPct !== null && <span className="qualif-ai-badge rounded-full px-2 py-0.5 text-xs">R² {aiDemoFitPct.toLocaleString("fr-CH")} %</span>}
+              </div>
+              <p className="mt-1 text-xs text-gray-600">
+                {aiDemoLoading
+                  ? "Calcul du profil météo comparé aux anomalies détectées…"
+                  : `Qualif IA simule ${aiDemoCloseCount} point(s) expliqués par la météo et ${aiDemoReviewCount} écart(s) à examiner pour correction.`}
+              </p>
+            </div>
+            <span className="text-[11px] text-violet-700">Violet pointillé = estimation IA simulée · rouge = anomalie du moteur de base</span>
+          </div>
+        )}
+
         {loadingSeries ? (
           <div className="flex h-[30rem] items-center justify-center text-sm text-gray-400">Chargement…</div>
         ) : (
@@ -306,6 +413,8 @@ export default function TraitementDetailPage() {
               selectedZoneId={selectedZoneId}
               onSelectZone={selectZone}
               previewPoints={previewPoints}
+              aiPreviewPoints={showQualifAIDemo ? aiDemoPoints : []}
+              aiZoneId={showQualifAIDemo ? selectedZoneId : null}
             />
           )
         )}
@@ -368,6 +477,7 @@ export default function TraitementDetailPage() {
 function DiagnosisPanel({
   batchId,
   anomaly,
+  context,
   busy,
   onValidate,
   onCorrect,
@@ -375,8 +485,15 @@ function DiagnosisPanel({
 }: {
   batchId: string;
   anomaly: AnomalyOut;
+  context: {
+    anomalyId: string;
+    meterCode: string;
+    fluidType: string;
+    role: string;
+    subtype: string;
+  };
   busy: boolean;
-  onValidate: () => void;
+  onValidate: (comment: string) => void;
   onCorrect: (method: string) => void;
   /** Lifts the fetched preview up to the parent, which draws it on the
    * main QualityChart inside this (selected) zone instead of a separate
@@ -390,10 +507,22 @@ function DiagnosisPanel({
   const [selectedMethod, setSelectedMethod] = useState<string>("");
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [comment, setComment] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
+  const qualifAI = useQualifAI();
+  const learnedSuggestion = qualifAI.getSuggestion({
+    fluidType: context.fluidType,
+    role: context.role,
+    subtype: context.subtype,
+  }, options);
+  const latestChatReason = qualifAI.getLatestUserMessage(context.anomalyId)?.trim();
+  const decisionComment = comment.trim() || latestChatReason || "";
 
   useEffect(() => {
     setOptions([]);
     setSelectedMethod("");
+    setComment("");
+    setChatOpen(false);
     onPreviewChange([]);
     if (resolved || !batchId) return;
     setLoadingOptions(true);
@@ -401,7 +530,7 @@ function DiagnosisPanel({
       .getCorrectionOptions(batchId, anomaly.id)
       .then((opts) => {
         setOptions(opts);
-        setSelectedMethod(opts[0]?.method ?? "");
+        setSelectedMethod(opts.find((option) => option.eligible)?.method ?? opts[0]?.method ?? "");
       })
       .finally(() => setLoadingOptions(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -417,6 +546,10 @@ function DiagnosisPanel({
       .finally(() => setLoadingPreview(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId, anomaly.id, selectedMethod, resolved]);
+
+  const selectedOption = options.find((option) => option.method === selectedMethod);
+  const recommendedMethod = options.find((option) => option.eligible)?.method;
+  const hasWeatherCorrection = options.some((option) => option.method.startsWith("meteo_"));
 
   // Cleared whenever this panel unmounts (e.g. the zone is deselected),
   // so the overlay never lingers on the main chart past this anomaly.
@@ -450,6 +583,27 @@ function DiagnosisPanel({
         </p>
       </div>
 
+      {!resolved && learnedSuggestion && (
+        <div className="qualif-ai-halo mt-3 rounded-xl border bg-violet-50/60 p-3">
+          <div className="flex items-center gap-2 text-xs font-semibold text-violet-800">
+            <AiIcon className="h-4 w-4" />
+            <span>Suggestion Qualif IA</span>
+            <span className="qualif-ai-badge rounded-full px-2 py-0.5 font-medium">{learnedSuggestion.examples} cas comparable(s)</span>
+          </div>
+          <p className="mt-1 text-sm font-medium text-gray-800">{learnedSuggestion.title}</p>
+          <p className="mt-1 text-xs leading-5 text-gray-600">{learnedSuggestion.explanation}</p>
+          {learnedSuggestion.kind === "correction" && (
+            <button
+              type="button"
+              onClick={() => setSelectedMethod(learnedSuggestion.method ?? "")}
+              className="mt-2 rounded-md border border-violet-300 bg-white px-2.5 py-1 text-xs font-medium text-violet-800 hover:bg-violet-100"
+            >
+              Afficher cette correction
+            </button>
+          )}
+        </div>
+      )}
+
       {!resolved ? (
         <div className="mt-3 space-y-3">
           <div>
@@ -458,30 +612,62 @@ function DiagnosisPanel({
             </p>
             {loadingOptions ? (
               <p className="text-xs text-gray-400">Chargement des correctifs disponibles…</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {options.map((opt, i) => (
+            ) : options.length ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                {options.map((option) => (
                   <button
-                    key={opt.method}
+                    key={option.method}
                     type="button"
-                    onClick={() => setSelectedMethod(opt.method)}
-                    title={opt.description}
+                    onClick={() => setSelectedMethod(option.method)}
+                    title={option.description}
                     className={clsx(
-                      "rounded-lg border px-3 py-1.5 text-left text-xs font-medium",
-                      selectedMethod === opt.method
-                        ? "border-geneva-700 bg-geneva-50 text-geneva-800"
-                        : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                      "rounded-lg border px-3 py-2 text-left",
+                      learnedSuggestion?.kind === "correction" && learnedSuggestion.method === option.method && "qualif-ai-halo",
+                      selectedMethod === option.method
+                        ? "border-geneva-700 bg-geneva-50"
+                        : "border-gray-300 hover:bg-gray-50"
                     )}
                   >
-                    {opt.label}
-                    {i === 0 && <span className="ml-1 font-normal text-geneva-600">(recommandé)</span>}
+                    <span className="flex items-center justify-between gap-2 text-xs font-medium text-gray-800">
+                      <span>{option.rank}. {option.label}</span>
+                      <span className="flex shrink-0 items-center gap-1">
+                        {option.method === recommendedMethod && (
+                          <span className="rounded-full bg-green-100 px-2 py-0.5 text-green-800">Règle de base</span>
+                        )}
+                        {learnedSuggestion?.kind === "correction" && learnedSuggestion.method === option.method && (
+                          <span className="qualif-ai-badge rounded-full px-2 py-0.5">✦ Qualif IA</span>
+                        )}
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-xs text-gray-600">
+                      Fiabilité estimée de la série : {option.original_confidence_pct.toLocaleString("fr-CH")}% → {option.confidence_pct.toLocaleString("fr-CH")}%
+                      {option.confidence_gain_pct > 0 && ` (+${option.confidence_gain_pct.toLocaleString("fr-CH")} points)`}
+                    </span>
+                    {typeof option.model_fit_pct === "number" && (
+                      <span className="mt-1 block text-xs text-blue-700">R² météo sur l’historique : {option.model_fit_pct.toLocaleString("fr-CH")} %</span>
+                    )}
+                    {!option.eligible && (
+                      <span className="mt-1 block text-xs text-amber-700">Ne couvre pas toute la zone ou n’améliore pas le score.</span>
+                    )}
                   </button>
                 ))}
               </div>
+            ) : (
+              <p className="text-xs text-amber-700">Aucune correction compatible n’est disponible pour cette zone.</p>
             )}
-            {options.find((o) => o.method === selectedMethod) && (
+            {selectedOption && (
               <p className="mt-1.5 text-xs text-gray-500">
-                {options.find((o) => o.method === selectedMethod)!.description}
+                {selectedOption.description} {selectedOption.confidence_basis}
+              </p>
+            )}
+            {hasWeatherCorrection && (
+              <p className="mt-2 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                Données météo de référence : Genève · historique de réanalyse Open-Meteo (2025).
+              </p>
+            )}
+            {!options.some((option) => option.eligible) && !loadingOptions && (
+              <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Aucun correctif testé n’augmente l’indice de fiabilité de cette série. Vous pouvez la valider en l’état avec un commentaire.
               </p>
             )}
           </div>
@@ -492,10 +678,32 @@ function DiagnosisPanel({
               : "Aperçu du correctif : la ligne orange en tirets sur la courbe ci-dessous montre les valeurs que ce correctif écrirait dans cette zone."}
           </p>
 
+          <div className="rounded-lg border border-gray-200 p-3">
+            <label htmlFor="anomaly-comment" className="mb-1 block text-xs font-medium text-gray-700">
+              Commentaire ou explication requis pour valider l’anomalie en l’état
+            </label>
+            <textarea
+              id="anomaly-comment"
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              maxLength={1000}
+              rows={2}
+              placeholder="Ex. : site en cours de travaux, compteur remplacé… (ou expliquez ce choix à Qualif IA)"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-geneva-600 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => setComment("Site en cours de travaux")}
+              className="mt-1 text-xs text-geneva-700 underline"
+            >
+              Insérer « site en cours de travaux »
+            </button>
+          </div>
+
           <div className="flex gap-2">
             <button
               onClick={() => onCorrect(selectedMethod)}
-              disabled={busy || !selectedMethod}
+              disabled={busy || !selectedMethod || !selectedOption?.eligible}
               className={clsx(
                 "rounded-lg px-3.5 py-1.5 text-sm font-medium disabled:opacity-50",
                 correctionPrimary
@@ -506,16 +714,34 @@ function DiagnosisPanel({
               {busy ? "…" : "Appliquer ce correctif"}
             </button>
             <button
-              onClick={onValidate}
-              disabled={busy}
+              onClick={() => onValidate(decisionComment)}
+              disabled={busy || !decisionComment}
               className={clsx(
                 "rounded-lg px-3.5 py-1.5 text-sm font-medium disabled:opacity-50",
+                learnedSuggestion?.kind === "detection" && "qualif-ai-halo",
                 !correctionPrimary
                   ? "bg-geneva-700 text-white hover:bg-geneva-800"
                   : "border border-gray-300 text-gray-700 hover:bg-gray-100"
               )}
             >
               {busy ? "…" : "Valider en l'état"}
+              {learnedSuggestion?.kind === "detection" && <span className="ml-1 text-violet-200">✦ Qualif IA</span>}
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-violet-100 bg-violet-50/40 px-3 py-2">
+            <p className="text-xs text-gray-600">
+              {qualifAI.enabled
+                ? `${qualifAI.learnedDecisionCount} décision(s) apprises · expliquez un choix pour enrichir le contexte.`
+                : "Qualif IA est désactivée. Réactivez-la dans la barre latérale pour mémoriser des retours."}
+            </p>
+            <button
+              type="button"
+              disabled={!qualifAI.enabled}
+              onClick={() => setChatOpen(true)}
+              className="shrink-0 rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Discuter avec Qualif IA
             </button>
           </div>
         </div>
@@ -524,6 +750,7 @@ function DiagnosisPanel({
           Zone déjà traitée — sélectionnez une autre zone depuis la courbe ou la liste ci-dessous pour continuer.
         </p>
       )}
+      <QualifAIChatDialog open={chatOpen} context={context} onClose={() => setChatOpen(false)} />
     </div>
   );
 }

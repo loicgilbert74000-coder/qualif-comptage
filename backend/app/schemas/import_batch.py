@@ -62,13 +62,21 @@ class AnomalyOut(BaseModel):
 
 class ResolveAnomalyIn(BaseModel):
     resolution: str  # "validee" | "corrigee"
-    method: str | None = None  # which correction technique to use when resolution == "corrigee"; see CorrectionOption
+    method: str | None = None  # correction technique, selected from ranked CorrectionOption results
+    comment: str | None = None  # free text, persisted in ProcessingHistory.stats without a schema migration
 
 
 class CorrectionOption(BaseModel):
     method: str
     label: str
     description: str
+    rank: int
+    original_confidence_pct: float
+    confidence_pct: float
+    confidence_gain_pct: float
+    model_fit_pct: float | None = None
+    eligible: bool
+    confidence_basis: str
 
 
 class CorrectionPreviewPoint(BaseModel):

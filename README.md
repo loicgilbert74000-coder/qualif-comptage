@@ -70,6 +70,54 @@ index. Les en-têtes `consommation_kwh`, `variation_kwh`, `volume_m3` et
 du fichier `cas2-gaz-sig-horaire` est traitée comme une consommation en m³,
 conformément au guide de ce jeu de données, malgré son unité affichée erronée.
 
+### Démonstration des corrections météo — Genève
+
+Pour la présentation, importer le fichier `backend/app/demo_data/geneva_demo_readings.csv`.
+Il contient deux séries journalières d’exemple (chauffage et photovoltaïque), avec
+une anomalie haute dans chacune pour afficher le parcours de correction météo.
+Le moteur propose alors les corrections par ordre de gain estimé sur l’indice de
+fiabilité global de la série. À gain égal, l’ajustement du modèle météo à
+l’historique départage les propositions. Une correction n’est applicable que si
+elle traite toute la zone et améliore ce score; cet indice de cohérence n’est
+pas une probabilité calibrée.
+
+Les facteurs environnementaux proviennent du fichier météo historique de Genève
+`backend/app/demo_data/geneva_weather_2025.csv`, obtenu avec l’API Historical
+Weather d’Open-Meteo pour la période du 1er janvier au 28 février 2025 et la
+zone urbaine de Genève (46.2044, 6.1432; cellule de réanalyse retournée :
+46.22144, 6.172249). La température sert à calculer les degrés-jours de
+chauffage (base 18 °C) ou de refroidissement (base 22 °C); le rayonnement solaire
+horaire est agrégé en kWh/m² par jour pour le photovoltaïque. Ces données ne sont
+chargées que pour les identifiants `DEMO-GENEVE-*`. Source et documentation :
+[Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api).
+
+Pour voir la simulation directement sur la courbe, importer
+`backend/app/demo_data/geneva_qualif_ia_demo_readings.csv`. Le compteur PV suit
+le rayonnement solaire de Genève : certaines baisses que le moteur de base
+signale sont proches du profil météo estimé, tandis que le pic du 12 février en
+est très éloigné. Dans le détail du traitement, les estimations Qualif IA sont
+tracées en violet pointillé et la zone active reçoit un halo violet. Cette
+couche est une simulation de démonstration; elle n’écrit pas dans la série.
+
+### Qualif IA — apprentissage des décisions métier
+
+La barre latérale propose deux commandes distinctes : **Auto-apprentissage** et
+**Suggestions IA**. Les décisions réellement enregistrées (anomalie conservée
+ou méthode de correction appliquée), ainsi que le motif saisi ou expliqué au
+chatbot, enrichissent une mémoire locale au navigateur. Qualif IA compare ensuite
+le fluide, le rôle et le sous-type d’anomalie aux cas appris. Elle peut suggérer
+de conserver une anomalie déjà reconnue comme légitime ou mettre en évidence une
+méthode choisie auparavant, à condition que cette méthode améliore encore le
+score de fiabilité de la série concernée. Les suggestions restent consultatives
+et sont signalées par un halo violet discret.
+
+Le prototype de démonstration utilise une mémoire de cas et des réponses
+contextuelles locales; il ne modifie pas les seuils du moteur de base et ne
+transmet pas les conversations à un service externe. L’apprentissage est propre
+au navigateur courant, sans migration de schéma; la persistance partagée entre
+utilisateurs et la connexion à un modèle conversationnel seront raccordées à la
+suite de l’intégration métier.
+
 ### Critères de détection et exemples
 
 Les seuils comparent chaque mesure à l'historique du même mois et du même

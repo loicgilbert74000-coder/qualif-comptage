@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     storage_dir: str = "/data/imports"
     cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
+    # Geneva reanalysis is loaded only for meter codes beginning DEMO-GENEVE.
+    geneva_demo_weather: bool = True
+
     # Default quality-engine thresholds (overridable per-organisation via /api/settings)
     spike_deviation_pct: float = 60.0       # % above the reference average => "pic"
     drop_deviation_pct: float = 60.0        # % below the reference average => "chute"
