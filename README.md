@@ -235,3 +235,9 @@ compteur (ex. `S04-PAC` → bâtiment `S04`).
 ## Licence
 
 Code publié sous licence MIT : voir [LICENSE](LICENSE).
+
+## Rendu Énerg-IACK 2026 (défi 3)
+
+- Support de présentation (PowerPoint, notes du présentateur incluses) : [`pitch/qualif-comptage-pitch.pptx`](pitch/qualif-comptage-pitch.pptx)
+- Fiche projet d'une page : [`pitch/fiche-projet.pdf`](pitch/fiche-projet.pdf) ([version modifiable](pitch/fiche-projet.docx))
+- Audit du code au regard du défi : [`docs/AUDIT_DEFI3.md`](docs/AUDIT_DEFI3.md)
