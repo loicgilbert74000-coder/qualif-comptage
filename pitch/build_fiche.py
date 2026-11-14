@@ -6,16 +6,16 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 ROWS = [
- ("Nom de l'équipe", "", "Pas de nom d'équipe — projet « Qualif-Comptage »"),
+ ("Nom de l'équipe", "", "Équipe sans nom — projet « Qualif-Comptage »"),
  ("Membres (prénoms)", "", "Saleh, Stéphane, Loïc, Sébastien"),
  ("Défi traité", "numéro et titre", "Défi 3 : L'IA gardienne de la donnée"),
  ("Notre réponse, en une phrase", "", "Un outil qui repère les erreurs des données de compteurs (trous, pics, index en baisse, compteur bloqué), propose une correction que la personne valide ou refuse, et garde la trace de chaque décision."),
  ("Ce que nous avons construit", "ce que fait le prototype, comment l'utiliser",
   "Application web (ou exécutable Windows/Linux). On importe un CSV de relevés, quel que soit le fluide ; l'outil calcule un score de qualité par compteur et liste les zones à traiter. Pour chaque zone : diagnostic, aperçu de la correction sur la courbe (profil type, interpolation ou report), validation ou refus, puis export CSV/JSON. Tout est inscrit dans l'historique."),
  ("Les données utilisées", "jeux du défi, autres sources, ce que nous en avons fait",
-  "Fichiers CSV de relevés du défi (électricité, gaz, eau, chaleur…), lus avec détection automatique des colonnes et du type de mesure. Pour la preuve chiffrée : une série horaire de gaz simulée sur 28 jours, avec pannes injectées. [À confirmer : jeux du défi effectivement chargés]"),
+  "L'importeur prend en charge les formats du défi (exports Rive-Claire, fichier cas2-gaz-sig-horaire) : détection des colonnes, du fluide, de l'unité et de la nature de la mesure (index ou consommation). Les chiffres de la démonstration viennent d'une série horaire de gaz simulée sur 28 jours, avec pannes injectées, car la vérité terrain y est connue."),
  ("Outils et assistants d'IA employés", "à déclarer au rendu (règlement, art. 5.4)",
-  "Claude (Anthropic) via Claude Code : support de pitch, notes et script de simulation. [À compléter : autres assistants utilisés pour le code]"),
+  "Claude (Anthropic), via Claude Code : une partie du code (commits co-signés dans le dépôt), l'audit du code, la simulation de la preuve, le support de pitch et cette fiche."),
  ("Ce qui marche, ce qui ne marche pas encore", "soyez honnêtes : c'est un critère",
   "Marche : détection de 10 types d'anomalies à seuils réglables (50/50 anomalies injectées détectées sur le benchmark synthétique de l'audit), reconstruction avec repli en cascade, historique, export. Pas encore : diagnostic « IA » = règles, pas un modèle entraîné ; pas de veille continue ; défauts connus (import qui plante sur une valeur vide, faux positifs en pas horaire), voir docs/AUDIT_DEFI3.md ; preuves sur données simulées ; pas d'authentification."),
  ("Ce que ça change", "kWh, CO₂, temps, argent — un ordre de grandeur suffit",
