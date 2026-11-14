@@ -52,109 +52,113 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   const ic = {};
   for (const n of ["FaClock", "FaBolt", "FaArrowDown", "FaLock", "FaFileUpload", "FaSearch", "FaMagic", "FaHistory", "FaCheck", "FaTimes", "FaCodeBranch", "FaGlobe", "FaBalanceScale"]) ic[n] = await icon(n);
 
+  const INK = "14213D";      // texte principal sur fond clair
+  const AMBER_TXT = "9A4A00"; // orange foncé : texte sur fond clair (contraste ≥ 5:1)
+  const TEAL_TXT = "0B6B5F";
+  const SOFT = "E6EBF5";      // texte secondaire sur fond sombre
+
   pres.addSection({ title: "Ouverture et problème" });
   // 1 — Titre + problème
   let s = pres.addSlide({ masterName: "DARK", sectionTitle: "Ouverture et problème" });
-  s.addText("Qualif-Comptage", { x: 0.6, y: 0.4, w: 8.8, h: 0.8, fontFace: "Cambria", fontSize: 40, bold: true, color: C.background1, align: "left", valign: "top", margin: 0, isTextBox: true, objectName: "Titre" });
-  s.addText("Sans données de comptage fiables, pas de sortie du fossile pilotable.", { x: 0.6, y: 1.2, w: 8.8, h: 0.45, fontFace: "Calibri", fontSize: 20, italic: true, color: C.accent6, margin: 0, isTextBox: true, objectName: "Accroche" });
+  s.addText("Qualif-Comptage", { x: 0.6, y: 0.35, w: 8.8, h: 0.8, fontFace: "Cambria", fontSize: 44, bold: true, color: C.background1, align: "left", valign: "top", margin: 0, isTextBox: true, objectName: "Titre" });
+  s.addText("Sans données de comptage fiables, pas de sortie du fossile pilotable.", { x: 0.6, y: 1.2, w: 8.8, h: 0.5, fontFace: "Calibri", fontSize: 22, italic: true, color: C.accent6, margin: 0, isTextBox: true, objectName: "Accroche" });
   const faults = [
-    ["FaClock", "Trous", "Relevés absents pendant des heures ou des jours"],
+    ["FaClock", "Trous", "Heures ou jours sans relevé"],
     ["FaBolt", "Pics et négatifs", "Un zéro en trop, une virgule décalée"],
-    ["FaArrowDown", "Index qui baisse", "Remplacement de compteur, ou erreur de saisie ?"],
-    ["FaLock", "Compteur bloqué", "Une valeur figée en pleine saison de chauffe"],
+    ["FaArrowDown", "Index qui baisse", "Remplacement ou erreur de saisie ?"],
+    ["FaLock", "Bloqué", "Valeur figée en pleine saison de chauffe"],
   ];
   faults.forEach((f, i) => {
     const x = 0.6 + i * 2.25, y = 1.95;
-    s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.05, h: 2.1, rectRadius: 0.08, fill: { color: C.text1 }, line: { color: C.text1 }, objectName: `Carte ${f[1]}` });
-    circleIcon(s, ic[f[0]], x + 0.2, y + 0.18, 0.55, C.accent3, `Icône ${f[1]}`);
-    s.addText(f[1], { x: x + 0.2, y: y + 0.85, w: 1.7, h: 0.5, fontFace: "Calibri", fontSize: 16, bold: true, color: C.background1, margin: 0, valign: "top", isTextBox: true });
-    s.addText(f[2], { x: x + 0.2, y: y + 1.3, w: 1.7, h: 0.7, fontFace: "Calibri", fontSize: 14, color: "D5DCEA", margin: 0, valign: "top", isTextBox: true });
+    s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.05, h: 2.3, rectRadius: 0.08, fill: { color: "1F3A66" }, line: { color: "1F3A66" }, objectName: `Carte ${f[1]}` });
+    circleIcon(s, ic[f[0]], x + 0.2, y + 0.18, 0.6, "E0533F", `Icône ${f[1]}`);
+    s.addText(f[1], { x: x + 0.2, y: y + 0.92, w: 1.7, h: 0.4, fontFace: "Calibri", fontSize: 18, bold: true, color: C.background1, margin: 0, valign: "top", isTextBox: true });
+    s.addText(f[2], { x: x + 0.2, y: y + 1.36, w: 1.7, h: 0.85, fontFace: "Calibri", fontSize: 16, color: C.background1, margin: 0, valign: "top", isTextBox: true });
   });
-  s.addText("Aujourd'hui : correction à la main, compteur par compteur, sans trace.", { x: 0.6, y: 4.25, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 18, bold: true, color: C.background1, margin: 0, isTextBox: true, objectName: "Constat" });
-  s.addText("Énerg-IACK 2026 · Défi 3 : L'IA gardienne de la donnée · Saleh Bauch, Stéphane Bernardini, Loïc Gilbert, Sébastien Lavaud", { x: 0.6, y: 4.85, w: 8.8, h: 0.5, fontFace: "Calibri", fontSize: 12, color: "B8C2D6", margin: 0, isTextBox: true, objectName: "Équipe et défi" });
+  s.addText("Aujourd'hui : correction à la main, compteur par compteur, sans trace.", { x: 0.6, y: 4.4, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 20, bold: true, color: C.background1, margin: 0, isTextBox: true, objectName: "Constat" });
+  s.addText("Énerg-IACK 2026 · Défi 3 : L'IA gardienne de la donnée\nSaleh Bauch, Stéphane Bernardini, Loïc Gilbert, Sébastien Lavaud", { x: 0.6, y: 4.85, w: 8.8, h: 0.55, fontFace: "Calibri", fontSize: 14, color: SOFT, margin: 0, valign: "top", isTextBox: true, objectName: "Équipe et défi" });
 
-  // 3 — Solution
+  // 2 — Solution
   pres.addSection({ title: "Solution" });
   s = pres.addSlide({ masterName: "LIGHT", sectionTitle: "Solution" });
-  s.addText("Un outil : importer, qualifier, corriger, tracer", { placeholder: "title", align: "left", valign: "top", fontSize: 28 });
+  s.addText("Importer, qualifier, corriger, tracer", { placeholder: "title", align: "left", valign: "top" });
   const steps = [
-    ["FaFileUpload", "Importer", "CSV de n'importe quel fluide : électricité, gaz, eau, chaleur, mazout…"],
-    ["FaSearch", "Qualifier", "Trous, pics, index en baisse, paliers : score de qualité par compteur"],
-    ["FaMagic", "Corriger", "Profil type du compteur, interpolation ou report, au choix de la personne"],
-    ["FaHistory", "Tracer", "Chaque validation ou refus est inscrit dans l'historique"],
+    ["FaFileUpload", "Importer", "CSV de tout fluide : électricité, gaz, eau, chaleur"],
+    ["FaSearch", "Qualifier", "Trous, pics, index en baisse, paliers, avec un score par compteur"],
+    ["FaMagic", "Corriger", "Profil type, interpolation ou report : la personne choisit"],
+    ["FaHistory", "Tracer", "Chaque validation ou refus est enregistré"],
   ];
   steps.forEach((st, i) => {
-    const x = 0.6 + i * 2.25, y = 1.6;
-    circleIcon(s, ic[st[0]], x, y, 0.8, i === 2 ? C.accent1 : C.accent2, `Étape ${st[1]}`);
-    s.addText(`${i + 1}. ${st[1]}`, { x, y: y + 1.0, w: 2.05, h: 0.4, fontFace: "Cambria", fontSize: 20, bold: true, color: C.text1, margin: 0, isTextBox: true });
-    s.addText(st[2], { x, y: y + 1.45, w: 2.0, h: 1.3, fontFace: "Calibri", fontSize: 14, color: C.accent5, margin: 0, valign: "top", isTextBox: true });
-    if (i < 3) s.addShape(pres.ShapeType.rightArrow, { x: x + 0.95, y: y + 0.27, w: 0.9, h: 0.26, fill: { color: C.background2 }, line: { color: C.background2 }, objectName: `Flèche ${i + 1}` });
+    const x = 0.6 + i * 2.25, y = 1.5;
+    circleIcon(s, ic[st[0]], x, y, 0.9, i === 2 ? "C2620A" : "0B6B5F", `Étape ${st[1]}`);
+    s.addText(`${i + 1}. ${st[1]}`, { x, y: y + 1.1, w: 2.1, h: 0.45, fontFace: "Cambria", fontSize: 22, bold: true, color: INK, margin: 0, isTextBox: true });
+    s.addText(st[2], { x, y: y + 1.65, w: 2.05, h: 1.5, fontFace: "Calibri", fontSize: 16, color: INK, margin: 0, valign: "top", isTextBox: true });
+    if (i < 3) s.addText("›", { x: x + 1.2, y: y + 0.05, w: 0.9, h: 0.8, fontFace: "Calibri", fontSize: 40, bold: true, color: "64748B", align: "center", valign: "middle", margin: 0, isTextBox: true, objectName: `Flèche ${i + 1}` });
   });
-  s.addText("Le modèle ne remplace pas l'expert : il propose, la personne décide.", { x: 0.6, y: 4.6, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 16, italic: true, color: C.text1, margin: 0, isTextBox: true, objectName: "Principe" });
+  s.addText("L'outil propose, la personne décide.", { x: 0.6, y: 4.6, w: 8.8, h: 0.45, fontFace: "Calibri", fontSize: 22, bold: true, color: INK, margin: 0, isTextBox: true, objectName: "Principe" });
 
-  // 4 — Preuve
+  // 3 — Preuve
   pres.addSection({ title: "Preuve" });
   s = pres.addSlide({ masterName: "LIGHT", sectionTitle: "Preuve" });
-  s.addText("Preuve : 8 h de gaz manquantes, reconstruites", { placeholder: "title", align: "left", valign: "top", fontSize: 28 });
-  const labels = sim.labels, raw = sim.raw, rec = sim.rec;
-  // série « reconstruit » : uniquement sur le trou (+ 1 point de chaque côté pour relier)
+  s.addText("Preuve : 8 h de gaz reconstruites", { placeholder: "title", align: "left", valign: "top" });
+  const labels = sim.labels.map((l, i) => (i % 12 === 0 ? (i % 24 === 0 ? l.slice(0, 5) : "12h") : " ")), raw = sim.raw, rec = sim.rec;
   const gapIdx = raw.map((v, i) => (v === null ? i : -1)).filter((i) => i >= 0);
   const lo = Math.min(...gapIdx) - 1, hi = Math.max(...gapIdx) + 1;
   const recGap = rec.map((v, i) => (i >= lo && i <= hi ? v : null));
   s.addChart(pres.charts.LINE, [
-    { name: "Mesure brute (trou 22/01, 6h–13h)", labels, values: raw },
+    { name: "Mesure brute (trou le 22/01)", labels, values: raw },
     { name: "Reconstruit par profil type", labels, values: recGap },
   ], {
-    x: 0.5, y: 1.4, w: 6.4, h: 3.4, chartColors: [HEX.a5, HEX.a1], lineSize: 2.5, lineDataSymbol: "none",
-    showLegend: true, legendPos: "b", legendFontSize: 11, legendColor: HEX.dk1, legendFontFace: "+mn-lt",
-    catAxisLabelColor: HEX.a5, valAxisLabelColor: HEX.a5, catAxisLabelFontSize: 10, valAxisLabelFontSize: 10,
-    catAxisLabelFontFace: "+mn-lt", valAxisLabelFontFace: "+mn-lt", catAxisLabelFrequency: 6, catAxisLabelRotate: 0,
-    valGridLine: { color: "E2E8F0", size: 0.5 }, catGridLine: { style: "none" },
-    showValAxisTitle: true, valAxisTitle: "kWh / h (simulé)", valAxisTitleFontSize: 10, valAxisTitleColor: HEX.a5, valAxisTitleFontFace: "+mn-lt",
+    x: 0.5, y: 1.3, w: 6.5, h: 3.6, chartColors: [INK, "E8890C"], lineSize: 3.5, lineDataSymbol: "none",
+    showLegend: true, legendPos: "b", legendFontSize: 13, legendColor: INK, legendFontFace: "+mn-lt",
+    catAxisLabelColor: INK, valAxisLabelColor: INK, catAxisLabelFontSize: 12, valAxisLabelFontSize: 12,
+    catAxisLabelFontFace: "+mn-lt", valAxisLabelFontFace: "+mn-lt", catAxisLabelFrequency: 1, catAxisLabelRotate: 0,
+    valGridLine: { color: "CBD5E1", size: 0.75 }, catGridLine: { style: "none" },
+    showValAxisTitle: true, valAxisTitle: "kWh par heure (simulé)", valAxisTitleFontSize: 12, valAxisTitleColor: INK, valAxisTitleFontFace: "+mn-lt",
     displayBlanksAs: "gap",
   });
-  const stats = [[`${sim.ncorr}`, "points corrigés\n(8 manquants, 13 incohérents)"], [`${sim.err_pct} %`, "écart moyen avec\nla vraie valeur"], ["50/50", "anomalies injectées\ndétectées (audit)"]];
+  const stats = [[`${sim.ncorr}`, "points corrigés", AMBER_TXT], [`${sim.err_pct} %`, "d'écart moyen avec la vraie valeur", TEAL_TXT], ["50/50", "anomalies injectées détectées", AMBER_TXT]];
   stats.forEach((st, i) => {
-    const y = 1.35 + i * 1.18;
-    s.addShape(pres.ShapeType.roundRect, { x: 7.15, y, w: 2.35, h: 1.05, rectRadius: 0.08, fill: { color: C.background2 }, line: { color: C.background2 }, objectName: `Carte chiffre ${i + 1}` });
-    s.addText(st[0], { x: 7.3, y: y + 0.08, w: 2.1, h: 0.5, fontFace: "Cambria", fontSize: 28, bold: true, color: i === 1 ? C.accent2 : C.accent1, margin: 0, isTextBox: true });
-    s.addText(st[1], { x: 7.3, y: y + 0.56, w: 2.1, h: 0.45, fontFace: "Calibri", fontSize: 11, color: C.text1, margin: 0, valign: "top", isTextBox: true });
+    const y = 1.3 + i * 1.22;
+    s.addShape(pres.ShapeType.roundRect, { x: 7.2, y, w: 2.3, h: 1.1, rectRadius: 0.08, fill: { color: C.background2 }, line: { color: C.background2 }, objectName: `Carte chiffre ${i + 1}` });
+    s.addText(st[0], { x: 7.35, y: y + 0.06, w: 2.0, h: 0.55, fontFace: "Cambria", fontSize: 32, bold: true, color: st[2], margin: 0, isTextBox: true });
+    s.addText(st[1], { x: 7.35, y: y + 0.62, w: 2.05, h: 0.45, fontFace: "Calibri", fontSize: 13, color: INK, margin: 0, valign: "top", isTextBox: true });
   });
-  s.addText("Série horaire simulée (28 jours, pannes injectées), analysée et corrigée par le vrai moteur du code.", { x: 0.5, y: 4.9, w: 8.4, h: 0.3, fontFace: "Calibri", fontSize: 10, italic: true, color: C.accent5, margin: 0, isTextBox: true, objectName: "Source" });
+  s.addText("Série horaire simulée sur 28 jours, pannes injectées, corrigée par le moteur du code.", { x: 0.5, y: 5.0, w: 8.4, h: 0.3, fontFace: "Calibri", fontSize: 12, italic: true, color: "475569", margin: 0, isTextBox: true, objectName: "Source" });
 
-  // 5 — Honnêteté + reprise
+  // 4 — Honnêteté
   pres.addSection({ title: "Limites et reprise" });
   s = pres.addSlide({ masterName: "LIGHT", sectionTitle: "Limites et reprise" });
   s.addText("Ce qui marche, ce qui reste à faire", { placeholder: "title", align: "left", valign: "top" });
   const col = (x, head, color, icn, items) => {
-    s.addShape(pres.ShapeType.roundRect, { x, y: 1.4, w: 4.3, h: 3.3, rectRadius: 0.08, fill: { color: C.background2 }, line: { color: C.background2 }, objectName: `Carte ${head}` });
-    circleIcon(s, ic[icn], x + 0.25, 1.6, 0.5, color, `Icône ${head}`);
-    s.addText(head, { x: x + 0.9, y: 1.6, w: 3.2, h: 0.5, fontFace: "Cambria", fontSize: 20, bold: true, color: C.text1, margin: 0, valign: "middle", isTextBox: true });
-    s.addText(items.map((t, i) => ({ text: t, options: { bullet: true, breakLine: i < items.length - 1 } })), { x: x + 0.25, y: 2.3, w: 3.85, h: 2.6, fontFace: "Calibri", fontSize: 14, color: C.text1, margin: 0, valign: "top", paraSpaceAfter: 6, isTextBox: true, objectName: `Liste ${head}` });
+    s.addShape(pres.ShapeType.roundRect, { x, y: 1.3, w: 4.3, h: 3.7, rectRadius: 0.08, fill: { color: C.background2 }, line: { color: C.background2 }, objectName: `Carte ${head}` });
+    circleIcon(s, ic[icn], x + 0.25, 1.5, 0.6, color, `Icône ${head}`);
+    s.addText(head, { x: x + 1.05, y: 1.5, w: 3.0, h: 0.6, fontFace: "Cambria", fontSize: 24, bold: true, color: INK, margin: 0, valign: "middle", isTextBox: true });
+    s.addText(items.map((t, i) => ({ text: t, options: { bullet: true, breakLine: i < items.length - 1 } })), { x: x + 0.25, y: 2.3, w: 3.85, h: 2.6, fontFace: "Calibri", fontSize: 16, color: INK, margin: 0, valign: "top", paraSpaceAfter: 8, isTextBox: true, objectName: `Liste ${head}` });
   };
-  col(0.6, "Ça marche", C.accent2, "FaCheck", ["10 types d'anomalies détectés, seuils réglables", "Reconstruction avec repli en cascade", "Exécutable Windows/Linux, sans installation", "18 tests passés, historique des traitements"]);
-  col(5.1, "Pas encore", C.accent3, "FaTimes", ["Le diagnostic « IA » est un jeu de règles, pas un modèle entraîné", "Pas de veille continue : CSV déposés à la main", "Défauts connus (audit) : import sur valeur vide, faux positifs en horaire", "Preuve sur données simulées"]);
+  col(0.6, "Ça marche", "0B6B5F", "FaCheck", ["10 types d'anomalies détectés, seuils réglables", "Reconstruction avec repli en cascade", "Exécutable sans installation", "18 tests passés, historique des traitements"]);
+  col(5.1, "Pas encore", "B3261E", "FaTimes", ["Diagnostic « IA » = des règles, pas un modèle entraîné", "Pas de veille continue (CSV déposés à la main)", "Défauts connus (audit) : import sur valeur vide, faux positifs en horaire", "Preuve sur données simulées"]);
 
-  // 6 — Impact + suite
+  // 5 — Impact + suite
   pres.addSection({ title: "Impact et suite" });
   s = pres.addSlide({ masterName: "DARK", sectionTitle: "Impact et suite" });
   s.addText("Des décisions fondées sur des données saines", { x: 0.6, y: 0.4, w: 8.8, h: 0.7, fontFace: "Cambria", fontSize: 30, bold: true, color: C.background1, align: "left", valign: "top", margin: 0, isTextBox: true, objectName: "Titre" });
-  s.addShape(pres.ShapeType.roundRect, { x: 0.6, y: 1.2, w: 8.8, h: 0.95, rectRadius: 0.08, fill: { color: C.accent1 }, line: { color: C.accent1 }, objectName: "Bandeau impact" });
-  s.addText("≈ 750 h / an", { x: 0.8, y: 1.2, w: 2.9, h: 0.95, fontFace: "Cambria", fontSize: 32, bold: true, color: C.text2, margin: 0, valign: "middle", isTextBox: true, objectName: "Chiffre impact" });
-  s.addText("de correction manuelle évitées pour 1 000 compteurs. Hypothèses : 5 zones à traiter par compteur et par an, 10 min à la main contre 1 min avec l'outil.", { x: 3.75, y: 1.2, w: 5.5, h: 0.95, fontFace: "Calibri", fontSize: 14, color: C.text2, margin: 0, valign: "middle", isTextBox: true, objectName: "Hypothèses impact" });
+  s.addShape(pres.ShapeType.roundRect, { x: 0.6, y: 1.15, w: 8.8, h: 1.15, rectRadius: 0.08, fill: { color: "F5A524" }, line: { color: "F5A524" }, objectName: "Bandeau impact" });
+  s.addText("≈ 750 h / an", { x: 0.8, y: 1.15, w: 3.2, h: 1.15, fontFace: "Cambria", fontSize: 36, bold: true, color: "0B1426", margin: 0, valign: "middle", isTextBox: true, objectName: "Chiffre impact" });
+  s.addText("de correction manuelle évitées pour 1 000 compteurs. Hypothèses : 5 zones par compteur et par an, 10 min à la main contre 1 min avec l'outil.", { x: 4.1, y: 1.15, w: 5.15, h: 1.15, fontFace: "Calibri", fontSize: 16, color: "0B1426", margin: 0, valign: "middle", isTextBox: true, objectName: "Hypothèses impact" });
   const cards = [
-    ["FaBalanceScale", "Pour la Ville", "Moins de temps perdu à nettoyer, des consommations fiables pour piloter et décider"],
+    ["FaBalanceScale", "Pour la Ville", "Moins de nettoyage, des consommations fiables"],
     ["FaGlobe", "Transposable", "Aucun fluide codé en dur : autres services, autres communes"],
-    ["FaCodeBranch", "Reprenable", "Code ouvert (FastAPI, React, SQLite/PostgreSQL), Docker ou .exe"],
+    ["FaCodeBranch", "Reprenable", "Code ouvert (licence MIT), Docker ou exécutable"],
   ];
   cards.forEach((cd, i) => {
     const x = 0.6 + i * 3.0;
-    s.addShape(pres.ShapeType.roundRect, { x, y: 2.4, w: 2.8, h: 2.3, rectRadius: 0.08, fill: { color: C.text1 }, line: { color: C.text1 }, objectName: `Carte ${cd[1]}` });
-    circleIcon(s, ic[cd[0]], x + 0.25, 2.6, 0.55, C.accent1, `Icône ${cd[1]}`);
-    s.addText(cd[1], { x: x + 0.25, y: 3.3, w: 2.4, h: 0.4, fontFace: "Cambria", fontSize: 18, bold: true, color: C.background1, margin: 0, isTextBox: true });
-    s.addText(cd[2], { x: x + 0.25, y: 3.7, w: 2.4, h: 0.95, fontFace: "Calibri", fontSize: 14, color: "D5DCEA", margin: 0, valign: "top", isTextBox: true });
+    s.addShape(pres.ShapeType.roundRect, { x, y: 2.5, w: 2.8, h: 2.3, rectRadius: 0.08, fill: { color: "1F3A66" }, line: { color: "1F3A66" }, objectName: `Carte ${cd[1]}` });
+    circleIcon(s, ic[cd[0]], x + 0.25, 2.65, 0.55, "F5A524", `Icône ${cd[1]}`);
+    s.addText(cd[1], { x: x + 0.25, y: 3.3, w: 2.4, h: 0.4, fontFace: "Cambria", fontSize: 20, bold: true, color: C.background1, margin: 0, isTextBox: true });
+    s.addText(cd[2], { x: x + 0.25, y: 3.75, w: 2.4, h: 1.0, fontFace: "Calibri", fontSize: 16, color: C.background1, margin: 0, valign: "top", isTextBox: true });
   });
-  s.addText("Suite : détecter les ruptures communes à plusieurs compteurs d'un même automate.", { x: 0.6, y: 4.9, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 14, italic: true, color: C.accent6, margin: 0, isTextBox: true, objectName: "Suite" });
+  s.addText("Suite : détecter les ruptures communes à plusieurs compteurs d'un même automate.", { x: 0.6, y: 4.95, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 16, italic: true, color: C.accent6, margin: 0, isTextBox: true, objectName: "Suite" });
 
   // Notes (≈ 3 min, ~430 mots)
   const N = fs.readFileSync(path.join(__dirname, "notes.json"), "utf8");
