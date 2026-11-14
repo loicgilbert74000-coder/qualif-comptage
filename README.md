@@ -231,3 +231,7 @@ compteur (ex. `S04-PAC` → bâtiment `S04`).
   en-têtes non standard (le backend l'accepte déjà via le paramètre
   `column_mapping`, il manque l'écran de configuration).
 - Export du rapport de qualification et de l'historique (PDF/Excel).
+
+## Licence
+
+Code publié sous licence MIT : voir [LICENSE](LICENSE).
