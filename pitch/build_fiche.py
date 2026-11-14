@@ -21,7 +21,7 @@ ROWS = [
  ("Ce que ça change", "kWh, CO₂, temps, argent — un ordre de grandeur suffit",
   "Des consommations fiables pour piloter la sortie du fossile, et moins de temps perdu à nettoyer les données à la main. Sur la série simulée : 21 points corrigés, écart moyen de 3,3 % avec la vraie valeur. Ordre de grandeur (hypothèse : 5 zones/compteur/an, 10 min à la main contre 1 min) : ≈ 750 h/an évitées pour 1 000 compteurs."),
  ("Pour que la Ville le reprenne", "licence, technologies, ce qu'il faudrait pour continuer",
-  "Technologies courantes : Python (FastAPI), React, SQLite ou PostgreSQL, Docker. Aucun fluide codé en dur. [Licence à choisir] Pour continuer : données réelles, authentification, export de rapports."),
+  "Technologies courantes : Python (FastAPI), React, SQLite ou PostgreSQL, Docker. Aucun fluide codé en dur. Licence MIT. Pour continuer : données réelles, authentification, export de rapports."),
  ("Code source", "lien vers le dépôt", "https://github.com/loicgilbert74000-coder/qualif-comptage  (dépôt privé : à ouvrir à la Ville)"),
 ]
 HEIGHTS = {}
