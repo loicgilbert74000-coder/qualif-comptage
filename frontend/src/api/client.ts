@@ -77,6 +77,24 @@ export const api = {
 
   deleteImport: (batchId: string) => request<void>(`/imports/${batchId}`, { method: "DELETE" }),
 
+  exportBatch: async (batchId: string, format: "csv" | "json"): Promise<{ blob: Blob; filename: string }> => {
+    const res = await fetch(`${BASE}/imports/${batchId}/export?format=${format}`);
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        detail = body.detail || detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(detail);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = /filename="([^"]+)"/.exec(disposition);
+    return { blob, filename: match?.[1] ?? `export.${format}` };
+  },
+
   listBuildings: () => request<Building[]>("/buildings"),
 
   listHistory: () => request<HistoryEntry[]>("/history"),

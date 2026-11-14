@@ -3,6 +3,7 @@ import Sidebar from "./components/Sidebar";
 import QualificationPage from "./pages/QualificationPage";
 import TraitementsPage from "./pages/TraitementsPage";
 import TraitementDetailPage from "./pages/TraitementDetailPage";
+import ExportPage from "./pages/ExportPage";
 import HistoriquePage from "./pages/HistoriquePage";
 import BatimentsPage from "./pages/BatimentsPage";
 import ParametresPage from "./pages/ParametresPage";
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/" element={<QualificationPage />} />
           <Route path="/traitements" element={<TraitementsPage />} />
           <Route path="/traitements/:batchId" element={<TraitementDetailPage />} />
+          <Route path="/traitements/:batchId/export" element={<ExportPage />} />
           <Route path="/historique" element={<HistoriquePage />} />
           <Route path="/batiments" element={<BatimentsPage />} />
           <Route path="/parametres" element={<ParametresPage />} />

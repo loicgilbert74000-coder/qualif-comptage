@@ -110,12 +110,13 @@ export default function TraitementsPage() {
                   <th className="px-3 py-2 font-medium">Fichier / Dossier</th>
                   <th className="px-3 py-2 font-medium">Qualité finale</th>
                   <th className="px-3 py-2 font-medium">Statut</th>
+                  <th className="px-3 py-2 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {treated.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="px-3 py-8 text-center text-gray-400">
+                    <td colSpan={4} className="px-3 py-8 text-center text-gray-400">
                       Aucun traitement effectué pour l'instant.
                     </td>
                   </tr>
@@ -128,6 +129,16 @@ export default function TraitementsPage() {
                     </td>
                     <td className="px-3 py-2">
                       <StatusBadge status={b.status} />
+                    </td>
+                    <td className="px-3 py-2">
+                      {b.status === "valide" && (
+                        <Link
+                          to={`/traitements/${b.id}/export`}
+                          className="rounded-md bg-geneva-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-geneva-800"
+                        >
+                          Exporter →
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -1,6 +1,11 @@
+import csv
+import io
+import json
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -261,6 +266,56 @@ def validate_meter(batch_id: UUID, meter_id: UUID, db: Session = Depends(get_db)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return ValidateMeterResponse(**result)
+
+
+@router.get("/{batch_id}/export")
+def export_batch(batch_id: UUID, format: str = "csv", db: Session = Depends(get_db)):
+    """Step 3 of the wizard ("Valider et exporter"): downloads the fully
+    treated batch as CSV or JSON. Only offered once every meter has been
+    saved (status VALIDE) — before that there's no final, reconciled data
+    to hand out yet."""
+    batch = _get_batch_or_404(db, batch_id)
+    if batch.status != ImportStatus.VALIDE:
+        raise HTTPException(
+            400,
+            "Ce dossier n'est pas encore entièrement traité — enregistrez toutes les courbes avant d'exporter.",
+        )
+    if format not in ("csv", "json"):
+        raise HTTPException(400, "Format d'export invalide : 'csv' ou 'json' attendu.")
+
+    rows = import_service.export_rows(db, batch)
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", batch.name).strip("_") or "export"
+
+    if format == "json":
+        content = json.dumps(rows, ensure_ascii=False, indent=2)
+        return Response(
+            content=content,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}.json"'},
+        )
+
+    fieldnames = list(rows[0].keys()) if rows else [
+        "batiment",
+        "code_batiment",
+        "compteur",
+        "code_compteur",
+        "type_fluide",
+        "role",
+        "unite",
+        "horodatage",
+        "valeur",
+        "valeur_brute",
+        "qualite",
+    ]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, delimiter=";")
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}.csv"'},
+    )
 
 
 @router.delete("/{batch_id}", status_code=204)

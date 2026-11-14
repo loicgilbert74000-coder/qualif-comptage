@@ -792,6 +792,38 @@ def reject_batch(db: Session, batch: ImportBatch) -> ImportBatch:
     return batch
 
 
+def export_rows(db: Session, batch: ImportBatch) -> list[dict]:
+    """Flat row-per-reading view of a fully-treated batch, ready to hand to
+    a CSV or JSON serializer — step 3 of the wizard ("Valider et exporter").
+    `valeur` is the final (possibly reconstructed) value; `valeur_brute`
+    preserves what was actually in the source file, even where the
+    reconstruction engine has since overwritten `valeur`."""
+    rows = (
+        db.query(Reading, Meter, Building)
+        .join(Meter, Meter.id == Reading.meter_id)
+        .join(Building, Building.id == Meter.building_id)
+        .filter(Reading.import_batch_id == batch.id)
+        .order_by(Building.name, Meter.code, Reading.timestamp)
+        .all()
+    )
+    return [
+        {
+            "batiment": building.name,
+            "code_batiment": building.code,
+            "compteur": meter.label,
+            "code_compteur": meter.code,
+            "type_fluide": meter.fluid_type,
+            "role": meter.role,
+            "unite": meter.unit,
+            "horodatage": reading.timestamp.isoformat(),
+            "valeur": reading.value,
+            "valeur_brute": reading.raw_value,
+            "qualite": reading.quality.value,
+        }
+        for reading, meter, building in rows
+    ]
+
+
 def delete_batch(db: Session, batch: ImportBatch) -> None:
     """Remove an import entry entirely (used from the "trop de fichiers"
     clean-up in the import panel). Its readings, anomalies and history rows

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import clsx from "clsx";
 import TopBar from "../components/TopBar";
+import StepIndicator from "../components/StepIndicator";
 import QualityChart from "../components/QualityChart";
 import type { ChartZone, PreviewPoint } from "../components/QualityChart";
 import LoadingOverlay from "../components/LoadingOverlay";
@@ -151,7 +152,9 @@ export default function TraitementDetailPage() {
     try {
       const result = await api.validateMeter(batchId, selectedMeterId);
       if (result.batch_complete) {
-        navigate("/traitements");
+        // Every meter of this dossier is now saved — move on to step 3
+        // ("Valider et exporter") instead of back to the plain list.
+        navigate(`/traitements/${batchId}/export`);
         return;
       }
       await refresh();
@@ -203,6 +206,7 @@ export default function TraitementDetailPage() {
         title={summary.name}
         subtitle="Traiter et reconstruire — sélectionnez chaque zone signalée pour la valider ou la corriger, puis enregistrez."
       />
+      <StepIndicator current={2} />
 
       <div className="flex-1 space-y-5 px-8 pb-10 pt-6">
         <Link to="/traitements" className="text-sm text-geneva-700 hover:underline">
