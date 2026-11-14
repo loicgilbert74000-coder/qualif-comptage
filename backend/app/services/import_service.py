@@ -24,6 +24,7 @@ from app.models import (
     ProcessingHistory,
     ProcessingAction,
     OrgSettings,
+    MeterValidation,
 )
 from app.services.csv_parser import parse_csv_bytes, ParseResult
 from app.services.quality_engine import analyze_series, batch_quality_score, MeterQualityReport
@@ -373,6 +374,187 @@ def validate_and_reconstruct(db: Session, batch: ImportBatch) -> dict:
         "points_smoothed": total_smoothed,
         "quality_before": quality_before,
         "quality_after": batch.quality_score,
+    }
+
+
+def validate_meter(db: Session, batch: ImportBatch, meter_id: uuid.UUID) -> dict:
+    """Save one meter's curve on its own, independently of the other
+    meters that may share the same import batch ("dossier"). A folder
+    import can contain many meters; forcing every single one of them to be
+    reviewed before any curve could be saved made the whole dossier feel
+    stuck. Each meter can now be reviewed and saved as soon as its own
+    zones are treated — the batch itself is only promoted to
+    ImportStatus.VALIDE once every meter it contains has been saved this
+    way."""
+    pending = (
+        db.query(Anomaly)
+        .filter(
+            Anomaly.import_batch_id == batch.id,
+            Anomaly.meter_id == meter_id,
+            Anomaly.resolution == AnomalyResolution.EN_ATTENTE,
+        )
+        .count()
+    )
+    if pending:
+        raise ValueError(
+            f"{pending} zone(s) de ce compteur n'ont pas encore été validée(s) ou corrigée(s). "
+            "Traitez chaque zone signalée avant d'enregistrer ce compteur."
+        )
+
+    meter = db.query(Meter).get(meter_id)
+    if meter is None:
+        raise ValueError("Compteur introuvable dans ce dossier.")
+
+    readings = (
+        db.query(Reading)
+        .filter(Reading.meter_id == meter_id, Reading.import_batch_id == batch.id)
+        .order_by(Reading.timestamp)
+        .all()
+    )
+    if not readings:
+        raise ValueError("Aucune donnée pour ce compteur dans ce dossier.")
+
+    from app.services.quality_engine import infer_granularity, _build_expected_index, analyze_series
+
+    cfg = get_org_settings(db)
+
+    def _quality_pct(df: pd.DataFrame) -> float:
+        report = analyze_series(
+            meter.code,
+            df,
+            spike_deviation_pct=cfg.spike_deviation_pct,
+            drop_deviation_pct=cfg.drop_deviation_pct,
+            reference_window_periods=cfg.reference_window_periods,
+            flatline_min_run=cfg.flatline_min_run,
+            allow_negative_values=cfg.allow_negative_values,
+            measurement_kind=meter.measurement_kind,
+            service_start=meter.service_start,
+            historical_min_points=cfg.historical_min_points,
+            robust_mad_multiplier=cfg.robust_mad_multiplier,
+            historical_extreme_ratio=cfg.historical_extreme_ratio,
+            zero_active_min_history=cfg.zero_active_min_history,
+            seasonal_activity_min_history=cfg.seasonal_activity_min_history,
+            timestamp_tolerance_pct=cfg.timestamp_tolerance_pct,
+        )
+        return report.quality_pct
+
+    df = _meter_rows_df(db, meter_id, batch.id)
+    quality_before = _quality_pct(df)
+
+    granularity = infer_granularity(pd.Series(df["timestamp"]))
+    expected_index = _build_expected_index(df["timestamp"].min(), df["timestamp"].max(), granularity)
+    expected_index = expected_index.union(pd.DatetimeIndex(df["timestamp"])).sort_values()
+    series = df.set_index("timestamp")["value"]
+    series = series[~series.index.duplicated(keep="last")]
+    aligned = series.reindex(expected_index)
+
+    bad_ts = {
+        r.timestamp
+        for r in readings
+        if r.quality == ReadingQuality.INCOHERENCE and pd.Timestamp(r.timestamp) in expected_index
+    }
+    bad_ts = {pd.Timestamp(t) for t in bad_ts}
+
+    validated_anomalies = (
+        db.query(Anomaly)
+        .filter(
+            Anomaly.import_batch_id == batch.id,
+            Anomaly.meter_id == meter_id,
+            Anomaly.resolution == AnomalyResolution.VALIDEE,
+        )
+        .all()
+    )
+    skip_ts: set[pd.Timestamp] = set()
+    for a in validated_anomalies:
+        mask = (expected_index >= pd.Timestamp(a.period_start)) & (expected_index <= pd.Timestamp(a.period_end))
+        skip_ts |= set(expected_index[mask])
+    bad_ts -= skip_ts
+
+    result = reconstruct_series(expected_index, aligned, bad_ts, granularity, skip_timestamps=skip_ts)
+
+    by_ts = {pd.Timestamp(r.timestamp): r for r in readings}
+    for ts in result.methods_used:
+        r = by_ts.get(ts)
+        new_val = float(result.values[ts]) if pd.notna(result.values[ts]) else None
+        if r is not None:
+            r.value = new_val
+            r.quality = ReadingQuality.RECONSTRUITE
+        else:
+            db.add(
+                Reading(
+                    meter_id=meter_id,
+                    import_batch_id=batch.id,
+                    timestamp=ts.to_pydatetime(),
+                    value=new_val,
+                    raw_value=None,
+                    unit=meter.unit,
+                    quality=ReadingQuality.RECONSTRUITE,
+                )
+            )
+    db.flush()
+
+    refreshed = (
+        db.query(Reading)
+        .filter(Reading.meter_id == meter_id, Reading.import_batch_id == batch.id)
+        .order_by(Reading.timestamp)
+        .all()
+    )
+    df_after = pd.DataFrame({"timestamp": [r.timestamp for r in refreshed], "value": [r.value for r in refreshed]})
+    quality_after = _quality_pct(df_after)
+
+    existing = (
+        db.query(MeterValidation)
+        .filter(MeterValidation.import_batch_id == batch.id, MeterValidation.meter_id == meter_id)
+        .one_or_none()
+    )
+    if existing is None:
+        existing = MeterValidation(import_batch_id=batch.id, meter_id=meter_id)
+        db.add(existing)
+    existing.validated_at = datetime.utcnow()
+    existing.points_reconstructed = result.n_missing_filled
+    existing.points_smoothed = result.n_incoherence_smoothed
+    existing.quality_before = quality_before
+    existing.quality_after = quality_after
+
+    db.add(
+        ProcessingHistory(
+            import_batch_id=batch.id,
+            action=ProcessingAction.VALIDE_ET_TRAITE,
+            reconstruction_method="profil_type + interpolation",
+            stats={
+                "meter_id": str(meter_id),
+                "meter_code": meter.code,
+                "points_reconstructed": result.n_missing_filled,
+                "points_smoothed": result.n_incoherence_smoothed,
+                "quality_before": quality_before,
+                "quality_after": quality_after,
+            },
+        )
+    )
+
+    all_meter_ids = {
+        row[0] for row in db.query(Reading.meter_id).filter(Reading.import_batch_id == batch.id).distinct()
+    }
+    validated_ids = {
+        row[0]
+        for row in db.query(MeterValidation.meter_id).filter(MeterValidation.import_batch_id == batch.id)
+    }
+    validated_ids.add(meter_id)
+    batch_complete = all_meter_ids <= validated_ids
+    if batch_complete:
+        batch.status = ImportStatus.VALIDE
+
+    db.commit()
+    db.refresh(batch)
+
+    return {
+        "status": batch.status.value,
+        "meter_id": meter_id,
+        "points_reconstructed": result.n_missing_filled,
+        "points_smoothed": result.n_incoherence_smoothed,
+        "quality_before": quality_before,
+        "quality_after": quality_after,
+        "batch_complete": batch_complete,
     }
 
 

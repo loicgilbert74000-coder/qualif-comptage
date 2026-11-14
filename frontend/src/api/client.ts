@@ -5,6 +5,7 @@ import type {
   SeriesPoint,
   SynthesisOut,
   ValidateResponse,
+  ValidateMeterResponse,
   OrgSettings,
   Building,
   HistoryEntry,
@@ -60,6 +61,9 @@ export const api = {
 
   validate: (batchId: string) =>
     request<ValidateResponse>(`/imports/${batchId}/validate`, { method: "POST" }),
+
+  validateMeter: (batchId: string, meterId: string) =>
+    request<ValidateMeterResponse>(`/imports/${batchId}/meters/${meterId}/validate`, { method: "POST" }),
 
   deleteImport: (batchId: string) => request<void>(`/imports/${batchId}`, { method: "DELETE" }),
 

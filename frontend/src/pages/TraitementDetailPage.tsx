@@ -72,7 +72,6 @@ export default function TraitementDetailPage() {
   const selectedAnomaly = anomalies.find((a) => a.id === selectedZoneId) ?? null;
 
   const pendingCount = anomalies.filter((a) => a.resolution === "en_attente").length;
-  const allResolved = pendingCount === 0;
 
   const pendingByMeter = useMemo(() => {
     const counts = new Map<string, number>();
@@ -83,7 +82,19 @@ export default function TraitementDetailPage() {
     return counts;
   }, [anomalies]);
 
-  const metersWithPending = (detail?.meters ?? []).filter((m) => (pendingByMeter.get(m.meter_id) ?? 0) > 0);
+  const metersWithPending = (detail?.meters ?? []).filter(
+    (m) => !m.saved && (pendingByMeter.get(m.meter_id) ?? 0) > 0
+  );
+
+  // Save is per meter, not per dossier: a folder import can hold many
+  // meters, and forcing every one of them to be treated before any curve
+  // could be saved made the whole dossier feel stuck. Each meter can be
+  // saved as soon as ITS OWN zones are treated.
+  const meterPendingCount = pendingByMeter.get(selectedMeterId) ?? 0;
+  const meterResolved = meterPendingCount === 0;
+  const meterSaved = selectedMeter?.saved ?? false;
+  const savedMeterCount = (detail?.meters ?? []).filter((m) => m.saved).length;
+  const totalMeterCount = detail?.meters.length ?? 0;
 
   const zones: ChartZone[] = meterAnomalies.map((a) => ({
     id: a.id,
@@ -107,13 +118,25 @@ export default function TraitementDetailPage() {
     }
   }
 
-  async function finalize() {
-    if (!batchId) return;
+  async function saveMeter() {
+    if (!batchId || !selectedMeterId) return;
     setBusy("finalize");
     setError(null);
     try {
-      await api.validate(batchId);
-      navigate("/traitements");
+      const result = await api.validateMeter(batchId, selectedMeterId);
+      if (result.batch_complete) {
+        navigate("/traitements");
+        return;
+      }
+      await refresh();
+      // Jump straight to the next meter that still needs treatment, so
+      // several meters can be saved one after another without having to
+      // hunt for the next one manually.
+      const next = metersWithPending.find((m) => m.meter_id !== selectedMeterId);
+      if (next) {
+        setSelectedMeterId(next.meter_id);
+        setSelectedZoneId(null);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -175,7 +198,8 @@ export default function TraitementDetailPage() {
                 const n = pendingByMeter.get(m.meter_id) ?? 0;
                 return (
                   <option key={m.meter_id} value={m.meter_id}>
-                    {m.meter_code} ({m.fluid_type} · {m.role}){n > 0 ? ` — ${n} à traiter` : ""}
+                    {m.meter_code} ({m.fluid_type} · {m.role})
+                    {m.saved ? " — enregistré" : n > 0 ? ` — ${n} à traiter` : ""}
                   </option>
                 );
               })}
@@ -184,9 +208,12 @@ export default function TraitementDetailPage() {
           <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
             {anomalies.length - pendingCount} / {anomalies.length} zone(s) traitée(s) pour ce dossier
           </span>
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
+            {savedMeterCount} / {totalMeterCount} compteur(s) enregistré(s)
+          </span>
         </div>
 
-        {!allResolved && metersWithPending.length > 0 && (
+        {metersWithPending.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <span className="font-medium">
               {meterAnomalies.length === 0 && selectedMeterId
@@ -281,16 +308,18 @@ export default function TraitementDetailPage() {
 
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <p className="text-sm text-gray-500">
-            {allResolved
-              ? "Toutes les zones ont été validées ou corrigées : la courbe peut être enregistrée."
-              : `${pendingCount} zone(s) encore à traiter avant de pouvoir enregistrer.`}
+            {meterSaved
+              ? "La courbe de ce compteur a déjà été enregistrée en base de données."
+              : meterResolved
+              ? "Toutes les zones de ce compteur ont été validées ou corrigées : sa courbe peut être enregistrée dès maintenant, sans attendre les autres compteurs du dossier."
+              : `${meterPendingCount} zone(s) de ce compteur encore à traiter avant de pouvoir l'enregistrer.`}
           </p>
           <button
-            onClick={finalize}
-            disabled={!allResolved || busy === "finalize"}
+            onClick={saveMeter}
+            disabled={!meterResolved || meterSaved || busy === "finalize"}
             className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
           >
-            {busy === "finalize" ? "…" : "Enregistrer la courbe en base de données"}
+            {busy === "finalize" ? "…" : meterSaved ? "Compteur déjà enregistré" : "Enregistrer la courbe de ce compteur"}
           </button>
         </section>
 

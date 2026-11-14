@@ -31,6 +31,7 @@ export interface MeterQualitySummary {
   incoherence_count: number;
   missing_count: number;
   quality_pct: number;
+  saved: boolean;
 }
 
 export interface ImportBatchDetail {
@@ -79,6 +80,16 @@ export interface ValidateResponse {
   points_smoothed: number;
   quality_before: number | null;
   quality_after: number;
+}
+
+export interface ValidateMeterResponse {
+  status: string;
+  meter_id: string;
+  points_reconstructed: number;
+  points_smoothed: number;
+  quality_before: number | null;
+  quality_after: number;
+  batch_complete: boolean;
 }
 
 export interface OrgSettings {

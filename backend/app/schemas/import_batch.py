@@ -34,6 +34,7 @@ class MeterQualitySummary(BaseModel):
     incoherence_count: int
     missing_count: int
     quality_pct: float
+    saved: bool = False  # this meter's curve has already been enregistrée (see MeterValidation)
 
 
 class AnomalyOut(BaseModel):
@@ -86,3 +87,13 @@ class ValidateResponse(BaseModel):
     points_smoothed: int
     quality_before: float | None
     quality_after: float
+
+
+class ValidateMeterResponse(BaseModel):
+    status: str
+    meter_id: UUID
+    points_reconstructed: int
+    points_smoothed: int
+    quality_before: float | None
+    quality_after: float
+    batch_complete: bool  # true once every meter of this batch has now been saved

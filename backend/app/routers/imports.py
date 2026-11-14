@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ImportBatch, Meter, Building, Reading, Anomaly, ReadingQuality
+from app.models import ImportBatch, Meter, Building, Reading, Anomaly, ReadingQuality, MeterValidation
 from app.schemas.import_batch import (
     ImportBatchSummary,
     ImportBatchDetail,
@@ -14,6 +14,7 @@ from app.schemas.import_batch import (
     SeriesPoint,
     SynthesisOut,
     ValidateResponse,
+    ValidateMeterResponse,
 )
 from app.services import import_service
 from app.services.diagnosis_engine import diagnose
@@ -58,6 +59,10 @@ def get_import(batch_id: UUID, db: Session = Depends(get_db)):
     meters = db.query(Meter).filter(Meter.id.in_(meter_ids)).all() if meter_ids else []
     building = db.query(Building).get(meters[0].building_id) if meters else None
 
+    saved_meter_ids = {
+        row[0] for row in db.query(MeterValidation.meter_id).filter(MeterValidation.import_batch_id == batch_id)
+    }
+
     summaries = []
     for m in meters:
         readings = db.query(Reading).filter(Reading.meter_id == m.id, Reading.import_batch_id == batch_id).all()
@@ -83,6 +88,7 @@ def get_import(batch_id: UUID, db: Session = Depends(get_db)):
                 incoherence_count=incoh,
                 missing_count=missing,
                 quality_pct=round(valid / total * 100, 1) if total else 0.0,
+                saved=m.id in saved_meter_ids,
             )
         )
 
@@ -203,6 +209,19 @@ def validate(batch_id: UUID, db: Session = Depends(get_db)):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return ValidateResponse(**result)
+
+
+@router.post("/{batch_id}/meters/{meter_id}/validate", response_model=ValidateMeterResponse)
+def validate_meter(batch_id: UUID, meter_id: UUID, db: Session = Depends(get_db)):
+    """Save one meter's curve on its own — lets a multi-meter dossier be
+    finalized meter by meter instead of forcing every meter to be treated
+    before any of them can be saved."""
+    batch = _get_batch_or_404(db, batch_id)
+    try:
+        result = import_service.validate_meter(db, batch, meter_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return ValidateMeterResponse(**result)
 
 
 @router.delete("/{batch_id}", status_code=204)

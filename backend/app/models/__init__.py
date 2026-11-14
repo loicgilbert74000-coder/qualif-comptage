@@ -6,6 +6,7 @@ from app.models.reading import Reading, ReadingQuality
 from app.models.anomaly import Anomaly, AnomalyType, AnomalyResolution
 from app.models.history import ProcessingHistory, ProcessingAction
 from app.models.org_settings import OrgSettings
+from app.models.meter_validation import MeterValidation
 
 __all__ = [
     "Base",
@@ -22,4 +23,5 @@ __all__ = [
     "ProcessingHistory",
     "ProcessingAction",
     "OrgSettings",
+    "MeterValidation",
 ]
