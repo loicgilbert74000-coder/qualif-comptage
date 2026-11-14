@@ -205,7 +205,7 @@ export default function QualificationPage() {
                           {b.period_end ? new Date(b.period_end).toLocaleDateString("fr-CH") : "—"}
                         </td>
                         <td className="px-3 py-2">
-                          <QualityBar value={b.quality_score} />
+                          <QualityBar value={b.quality_score} invalid={b.status === "refuse" || b.status === "deja_traite"} />
                         </td>
                         <td className="px-3 py-2">
                           <StatusBadge status={b.status} />

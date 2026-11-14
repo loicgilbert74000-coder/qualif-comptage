@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import ImportBatch, Meter, Building, Reading, Anomaly, ReadingQuality, MeterValidation
+from app.models import ImportBatch, ImportStatus, Meter, Building, Reading, Anomaly, ReadingQuality, MeterValidation
 from app.schemas.import_batch import (
     ImportBatchSummary,
     ImportBatchDetail,
@@ -15,6 +15,8 @@ from app.schemas.import_batch import (
     SynthesisOut,
     ValidateResponse,
     ValidateMeterResponse,
+    CorrectionOption,
+    CorrectionPreviewPoint,
 )
 from app.services import import_service
 from app.services.diagnosis_engine import diagnose
@@ -163,11 +165,43 @@ def resolve_anomaly(batch_id: UUID, anomaly_id: UUID, payload: ResolveAnomalyIn,
     if payload.resolution not in ("validee", "corrigee"):
         raise HTTPException(400, "Résolution invalide : 'validee' ou 'corrigee' attendu.")
     try:
-        import_service.resolve_anomaly(db, batch, anomaly, payload.resolution)
+        import_service.resolve_anomaly(db, batch, anomaly, payload.resolution, method=payload.method)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     meter = db.query(Meter).get(anomaly.meter_id)
     return _anomaly_out(anomaly, meter)
+
+
+@router.get("/{batch_id}/anomalies/{anomaly_id}/correction-options", response_model=list[CorrectionOption])
+def get_correction_options(batch_id: UUID, anomaly_id: UUID, db: Session = Depends(get_db)):
+    """The reconstruction techniques worth proposing for this one anomaly,
+    tailored to its meter's fluid/measurement type — several different
+    correctifs instead of a single one-size-fits-all suggestion."""
+    _get_batch_or_404(db, batch_id)
+    anomaly = (
+        db.query(Anomaly)
+        .filter(Anomaly.id == anomaly_id, Anomaly.import_batch_id == batch_id)
+        .one_or_none()
+    )
+    if anomaly is None:
+        raise HTTPException(404, "Anomalie introuvable")
+    return import_service.correction_options_for_anomaly(db, anomaly)
+
+
+@router.get("/{batch_id}/anomalies/{anomaly_id}/correction-preview", response_model=list[CorrectionPreviewPoint])
+def get_correction_preview(batch_id: UUID, anomaly_id: UUID, method: str, db: Session = Depends(get_db)):
+    """What applying `method` to this anomaly's period would produce,
+    without writing anything — an aperçu before the person commits to one
+    of the proposed correctifs."""
+    batch = _get_batch_or_404(db, batch_id)
+    anomaly = (
+        db.query(Anomaly)
+        .filter(Anomaly.id == anomaly_id, Anomaly.import_batch_id == batch_id)
+        .one_or_none()
+    )
+    if anomaly is None:
+        raise HTTPException(404, "Anomalie introuvable")
+    return import_service.preview_correction(db, batch, anomaly, method)
 
 
 @router.get("/{batch_id}/synthesis", response_model=SynthesisOut)
@@ -190,7 +224,12 @@ def get_synthesis(batch_id: UUID, db: Session = Depends(get_db)):
 @router.post("/{batch_id}/reanalyze", response_model=ImportBatchSummary)
 def reanalyze(batch_id: UUID, db: Session = Depends(get_db)):
     batch = _get_batch_or_404(db, batch_id)
-    import_service.run_quality_analysis(db, batch)
+    # A refused file, or a duplicate that was never actually ingested, has
+    # no readings of its own to (re)analyse — recomputing against an empty
+    # series would wipe the "refusé"/"déjà traité" status and the cleared
+    # quality index with a misleading 0%.
+    if batch.status not in (ImportStatus.REFUSE, ImportStatus.DEJA_TRAITE):
+        import_service.run_quality_analysis(db, batch)
     return ImportBatchSummary.model_validate(batch)
 
 

@@ -1,4 +1,4 @@
-export type ImportStatus = "en_cours" | "a_valider" | "a_corriger" | "valide" | "refuse";
+export type ImportStatus = "en_cours" | "a_valider" | "a_corriger" | "valide" | "refuse" | "deja_traite";
 export type ImportKind = "fichier" | "dossier";
 export type Granularity = "15min" | "30min" | "horaire" | "journaliere" | "mensuelle";
 export type PointQuality = "valide" | "incoherence" | "manquante" | "reconstruite";
@@ -63,6 +63,18 @@ export interface SeriesPoint {
   timestamp: string;
   value: number | null;
   quality: PointQuality;
+}
+
+export interface CorrectionOption {
+  method: string;
+  label: string;
+  description: string;
+}
+
+export interface CorrectionPreviewPoint {
+  timestamp: string;
+  current_value: number | null;
+  proposed_value: number | null;
 }
 
 export interface SynthesisOut {

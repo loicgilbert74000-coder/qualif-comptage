@@ -19,7 +19,9 @@ export default function TraitementsPage() {
   }, []);
 
   const pending = imports.filter((i) => i.status === "a_valider" || i.status === "a_corriger");
-  const treated = imports.filter((i) => i.status === "valide" || i.status === "refuse");
+  const treated = imports.filter(
+    (i) => i.status === "valide" || i.status === "refuse" || i.status === "deja_traite"
+  );
 
   async function reject(id: string) {
     setBusyId(id);
@@ -122,7 +124,7 @@ export default function TraitementsPage() {
                   <tr key={b.id}>
                     <td className="px-3 py-2 font-medium text-gray-800">{b.name}</td>
                     <td className="px-3 py-2">
-                      <QualityBar value={b.quality_score} />
+                      <QualityBar value={b.quality_score} invalid={b.status === "refuse" || b.status === "deja_traite"} />
                     </td>
                     <td className="px-3 py-2">
                       <StatusBadge status={b.status} />

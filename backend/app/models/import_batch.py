@@ -15,6 +15,7 @@ class ImportStatus(str, enum.Enum):
     VALIDE = "valide"
     REFUSE = "refuse"
     EN_COURS = "en_cours"
+    DEJA_TRAITE = "deja_traite"  # upload matched a file (or set of files) already in base — not re-ingested
 
 
 class ImportKind(str, enum.Enum):
@@ -43,8 +44,9 @@ class ImportBatch(Base):
     period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
 
-    quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-100
+    quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-100 ; None + statut refuse/déjà traité = indice non valide
     status: Mapped[ImportStatus] = mapped_column(Enum(ImportStatus), default=ImportStatus.EN_COURS)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)  # dedup fingerprint of the uploaded file(s)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -8,6 +8,7 @@ const ACTION_LABELS: Record<string, string> = {
   reanalyse: "Réanalyse",
   refuse: "Refus",
   valide_et_traite: "Validé et traité",
+  deja_traite: "Déjà traité (doublon)",
 };
 
 export default function HistoriquePage() {

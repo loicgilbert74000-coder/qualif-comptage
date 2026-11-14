@@ -75,6 +75,11 @@ def on_startup():
         connection.execute(text("UPDATE anomalies SET resolution = 'VALIDEE' WHERE resolution = 'validee'"))
         connection.execute(text("UPDATE anomalies SET resolution = 'CORRIGEE' WHERE resolution = 'corrigee'"))
 
+    batch_columns = {column["name"] for column in inspect(engine).get_columns("import_batches")}
+    if "content_hash" not in batch_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE import_batches ADD COLUMN content_hash VARCHAR(64)"))
+
 
 app.include_router(imports.router)
 app.include_router(buildings.router)

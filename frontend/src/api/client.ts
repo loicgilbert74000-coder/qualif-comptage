@@ -6,6 +6,8 @@ import type {
   SynthesisOut,
   ValidateResponse,
   ValidateMeterResponse,
+  CorrectionOption,
+  CorrectionPreviewPoint,
   OrgSettings,
   Building,
   HistoryEntry,
@@ -45,12 +47,20 @@ export const api = {
 
   getAnomalies: (batchId: string) => request<AnomalyOut[]>(`/imports/${batchId}/anomalies`),
 
-  resolveAnomaly: (batchId: string, anomalyId: string, resolution: "validee" | "corrigee") =>
+  resolveAnomaly: (batchId: string, anomalyId: string, resolution: "validee" | "corrigee", method?: string) =>
     request<AnomalyOut>(`/imports/${batchId}/anomalies/${anomalyId}/resolve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resolution }),
+      body: JSON.stringify({ resolution, method: method ?? null }),
     }),
+
+  getCorrectionOptions: (batchId: string, anomalyId: string) =>
+    request<CorrectionOption[]>(`/imports/${batchId}/anomalies/${anomalyId}/correction-options`),
+
+  getCorrectionPreview: (batchId: string, anomalyId: string, method: string) =>
+    request<CorrectionPreviewPoint[]>(
+      `/imports/${batchId}/anomalies/${anomalyId}/correction-preview?method=${encodeURIComponent(method)}`
+    ),
 
   getSynthesis: (batchId: string) => request<SynthesisOut>(`/imports/${batchId}/synthesis`),
 

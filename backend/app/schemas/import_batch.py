@@ -58,6 +58,19 @@ class AnomalyOut(BaseModel):
 
 class ResolveAnomalyIn(BaseModel):
     resolution: str  # "validee" | "corrigee"
+    method: str | None = None  # which correction technique to use when resolution == "corrigee"; see CorrectionOption
+
+
+class CorrectionOption(BaseModel):
+    method: str
+    label: str
+    description: str
+
+
+class CorrectionPreviewPoint(BaseModel):
+    timestamp: datetime
+    current_value: float | None
+    proposed_value: float | None
 
 
 class SeriesPoint(BaseModel):

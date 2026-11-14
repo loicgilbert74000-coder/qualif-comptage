@@ -6,7 +6,14 @@ import QualityChart from "../components/QualityChart";
 import type { ChartZone } from "../components/QualityChart";
 import LoadingOverlay from "../components/LoadingOverlay";
 import { api } from "../api/client";
-import type { ImportBatchDetail, AnomalyOut, SeriesPoint, AnomalyResolution } from "../types";
+import type {
+  ImportBatchDetail,
+  AnomalyOut,
+  SeriesPoint,
+  AnomalyResolution,
+  CorrectionOption,
+  CorrectionPreviewPoint,
+} from "../types";
 
 const RESOLUTION_LABEL: Record<AnomalyResolution, string> = {
   en_attente: "À traiter",
@@ -103,12 +110,12 @@ export default function TraitementDetailPage() {
     resolution: a.resolution,
   }));
 
-  async function resolve(resolution: "validee" | "corrigee") {
+  async function resolve(resolution: "validee" | "corrigee", method?: string) {
     if (!batchId || !selectedAnomaly) return;
     setBusy(`resolve:${selectedAnomaly.id}`);
     setError(null);
     try {
-      await api.resolveAnomaly(batchId, selectedAnomaly.id, resolution);
+      await api.resolveAnomaly(batchId, selectedAnomaly.id, resolution, method);
       await Promise.all([refresh(), loadSeries()]);
       setSelectedZoneId(null);
     } catch (e) {
@@ -244,10 +251,11 @@ export default function TraitementDetailPage() {
         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           {selectedAnomaly ? (
             <DiagnosisPanel
+              batchId={batchId ?? ""}
               anomaly={selectedAnomaly}
               busy={busy === `resolve:${selectedAnomaly.id}`}
               onValidate={() => resolve("validee")}
-              onCorrect={() => resolve("corrigee")}
+              onCorrect={(method) => resolve("corrigee", method)}
             />
           ) : (
             <div>
@@ -333,18 +341,53 @@ export default function TraitementDetailPage() {
 }
 
 function DiagnosisPanel({
+  batchId,
   anomaly,
   busy,
   onValidate,
   onCorrect,
 }: {
+  batchId: string;
   anomaly: AnomalyOut;
   busy: boolean;
   onValidate: () => void;
-  onCorrect: () => void;
+  onCorrect: (method: string) => void;
 }) {
   const resolved = anomaly.resolution !== "en_attente";
   const correctionPrimary = anomaly.recommended_action !== "valider";
+
+  const [options, setOptions] = useState<CorrectionOption[]>([]);
+  const [selectedMethod, setSelectedMethod] = useState<string>("");
+  const [preview, setPreview] = useState<CorrectionPreviewPoint[]>([]);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
+  useEffect(() => {
+    setOptions([]);
+    setSelectedMethod("");
+    setPreview([]);
+    if (resolved || !batchId) return;
+    setLoadingOptions(true);
+    api
+      .getCorrectionOptions(batchId, anomaly.id)
+      .then((opts) => {
+        setOptions(opts);
+        setSelectedMethod(opts[0]?.method ?? "");
+      })
+      .finally(() => setLoadingOptions(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchId, anomaly.id, resolved]);
+
+  useEffect(() => {
+    setPreview([]);
+    if (!selectedMethod || !batchId || resolved) return;
+    setLoadingPreview(true);
+    api
+      .getCorrectionPreview(batchId, anomaly.id, selectedMethod)
+      .then(setPreview)
+      .finally(() => setLoadingPreview(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchId, anomaly.id, selectedMethod, resolved]);
 
   return (
     <div>
@@ -372,31 +415,101 @@ function DiagnosisPanel({
       </div>
 
       {!resolved ? (
-        <div className="mt-3 flex gap-2">
-          <button
-            onClick={onCorrect}
-            disabled={busy}
-            className={clsx(
-              "rounded-lg px-3.5 py-1.5 text-sm font-medium disabled:opacity-50",
-              correctionPrimary
-                ? "bg-geneva-700 text-white hover:bg-geneva-800"
-                : "border border-gray-300 text-gray-700 hover:bg-gray-100"
+        <div className="mt-3 space-y-3">
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-gray-500">
+              Choisissez un correctif — adapté au type de compteur ({anomaly.meter_code}) :
+            </p>
+            {loadingOptions ? (
+              <p className="text-xs text-gray-400">Chargement des correctifs disponibles…</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {options.map((opt, i) => (
+                  <button
+                    key={opt.method}
+                    type="button"
+                    onClick={() => setSelectedMethod(opt.method)}
+                    title={opt.description}
+                    className={clsx(
+                      "rounded-lg border px-3 py-1.5 text-left text-xs font-medium",
+                      selectedMethod === opt.method
+                        ? "border-geneva-700 bg-geneva-50 text-geneva-800"
+                        : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                    )}
+                  >
+                    {opt.label}
+                    {i === 0 && <span className="ml-1 font-normal text-geneva-600">(recommandé)</span>}
+                  </button>
+                ))}
+              </div>
             )}
-          >
-            {busy ? "…" : "Appliquer la correction proposée"}
-          </button>
-          <button
-            onClick={onValidate}
-            disabled={busy}
-            className={clsx(
-              "rounded-lg px-3.5 py-1.5 text-sm font-medium disabled:opacity-50",
-              !correctionPrimary
-                ? "bg-geneva-700 text-white hover:bg-geneva-800"
-                : "border border-gray-300 text-gray-700 hover:bg-gray-100"
+            {options.find((o) => o.method === selectedMethod) && (
+              <p className="mt-1.5 text-xs text-gray-500">
+                {options.find((o) => o.method === selectedMethod)!.description}
+              </p>
             )}
-          >
-            {busy ? "…" : "Valider en l'état"}
-          </button>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-gray-500">Aperçu du correctif avant application :</p>
+            {loadingPreview ? (
+              <p className="text-xs text-gray-400">Calcul de l'aperçu…</p>
+            ) : preview.length === 0 ? (
+              <p className="text-xs text-gray-400">—</p>
+            ) : (
+              <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-gray-50 text-gray-500">
+                    <tr>
+                      <th className="px-2 py-1 font-medium">Horodatage</th>
+                      <th className="px-2 py-1 font-medium">Valeur actuelle</th>
+                      <th className="px-2 py-1 font-medium">Valeur proposée</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {preview.map((p) => (
+                      <tr key={p.timestamp}>
+                        <td className="px-2 py-1 text-gray-600">{new Date(p.timestamp).toLocaleString("fr-CH")}</td>
+                        <td className="px-2 py-1 text-gray-400">
+                          {p.current_value === null ? "—" : p.current_value.toLocaleString("fr-CH")}
+                        </td>
+                        <td className="px-2 py-1 font-medium text-geneva-700">
+                          {p.proposed_value === null ? "—" : p.proposed_value.toLocaleString("fr-CH")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => onCorrect(selectedMethod)}
+              disabled={busy || !selectedMethod}
+              className={clsx(
+                "rounded-lg px-3.5 py-1.5 text-sm font-medium disabled:opacity-50",
+                correctionPrimary
+                  ? "bg-geneva-700 text-white hover:bg-geneva-800"
+                  : "border border-gray-300 text-gray-700 hover:bg-gray-100"
+              )}
+            >
+              {busy ? "…" : "Appliquer ce correctif"}
+            </button>
+            <button
+              onClick={onValidate}
+              disabled={busy}
+              className={clsx(
+                "rounded-lg px-3.5 py-1.5 text-sm font-medium disabled:opacity-50",
+                !correctionPrimary
+                  ? "bg-geneva-700 text-white hover:bg-geneva-800"
+                  : "border border-gray-300 text-gray-700 hover:bg-gray-100"
+              )}
+            >
+              {busy ? "…" : "Valider en l'état"}
+            </button>
+          </div>
         </div>
       ) : (
         <p className="mt-3 text-xs text-gray-400">

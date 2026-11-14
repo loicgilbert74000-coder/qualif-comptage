@@ -14,6 +14,7 @@ class ProcessingAction(str, enum.Enum):
     REANALYSE = "reanalyse"
     REFUSE = "refuse"
     VALIDE_ET_TRAITE = "valide_et_traite"
+    DEJA_TRAITE = "deja_traite"
 
 
 class ProcessingHistory(Base):

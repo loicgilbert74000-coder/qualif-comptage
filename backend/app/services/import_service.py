@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import uuid
@@ -77,6 +78,15 @@ def _get_or_create_meter(db: Session, building: Building, parsed) -> Meter:
     return m
 
 
+def _content_hash(files: list[tuple[str, bytes]]) -> str:
+    """Fingerprint of a set of uploaded files, independent of upload order
+    or filename — just their actual bytes — so the exact same file (or the
+    exact same folder of files) re-uploaded later can be recognised as a
+    duplicate instead of being silently re-ingested a second time."""
+    per_file = sorted(hashlib.sha256(content).hexdigest() for _, content in files)
+    return hashlib.sha256("|".join(per_file).encode("utf-8")).hexdigest()
+
+
 def ingest_files(
     db: Session,
     files: list[tuple[str, bytes]],
@@ -89,13 +99,59 @@ def ingest_files(
     """Parse one or several CSV files and persist them as a single
     ImportBatch, auto-creating any Building/Meter encountered for the first
     time. Any meter type is accepted — the fluid/unit/role are whatever the
-    source file says."""
+    source file says.
+
+    If the exact same file (or set of files) has already been uploaded
+    before, the data is not re-ingested a second time: a new ImportBatch
+    row is still created, so the attempt stays visible in the import list,
+    but with ImportStatus.DEJA_TRAITE and no readings/anomalies of its
+    own."""
 
     kind = ImportKind.DOSSIER if len(files) > 1 else ImportKind.FICHIER
     name = display_name or (files[0][0] if len(files) == 1 else f"Dossier ({len(files)} fichiers)")
+    content_hash = _content_hash(files)
 
     batch_dir = os.path.join(app_settings.storage_dir, str(uuid.uuid4()))
     os.makedirs(batch_dir, exist_ok=True)
+    for filename, content in files:
+        with open(os.path.join(batch_dir, filename), "wb") as fh:
+            fh.write(content)
+
+    duplicate_of = (
+        db.query(ImportBatch)
+        .filter(ImportBatch.content_hash == content_hash)
+        .order_by(ImportBatch.created_at)
+        .first()
+    )
+    if duplicate_of is not None:
+        batch = ImportBatch(
+            name=name,
+            kind=kind,
+            file_count=len(files),
+            storage_path=batch_dir,
+            column_mapping=column_mapping or {},
+            delimiter=delimiter or ";",
+            decimal_separator=decimal_separator,
+            status=ImportStatus.DEJA_TRAITE,
+            content_hash=content_hash,
+            building_count=duplicate_of.building_count,
+            meter_count=duplicate_of.meter_count,
+            period_start=duplicate_of.period_start,
+            period_end=duplicate_of.period_end,
+            quality_score=None,  # the index isn't meaningful for a file that was never (re-)analysed
+        )
+        db.add(batch)
+        db.flush()
+        db.add(
+            ProcessingHistory(
+                import_batch_id=batch.id,
+                action=ProcessingAction.DEJA_TRAITE,
+                stats={"duplicate_of": str(duplicate_of.id), "duplicate_of_name": duplicate_of.name},
+            )
+        )
+        db.commit()
+        db.refresh(batch)
+        return batch
 
     batch = ImportBatch(
         name=name,
@@ -106,6 +162,7 @@ def ingest_files(
         delimiter=delimiter or ";",
         decimal_separator=decimal_separator,
         status=ImportStatus.EN_COURS,
+        content_hash=content_hash,
     )
     db.add(batch)
     db.flush()
@@ -117,9 +174,6 @@ def ingest_files(
     period_min, period_max = None, None
 
     for filename, content in files:
-        with open(os.path.join(batch_dir, filename), "wb") as fh:
-            fh.write(content)
-
         result: ParseResult = parse_csv_bytes(
             content, filename, column_mapping=column_mapping, delimiter=delimiter, decimal_separator=decimal_separator
         )
@@ -558,58 +612,125 @@ def validate_meter(db: Session, batch: ImportBatch, meter_id: uuid.UUID) -> dict
     }
 
 
-def resolve_anomaly(db: Session, batch: ImportBatch, anomaly: Anomaly, resolution: str) -> dict:
+def _anomaly_series_context(db: Session, batch: ImportBatch, anomaly: Anomaly):
+    """Gathers what both resolve_anomaly and preview_correction need: the
+    meter, its readings for this batch, and the series aligned to its
+    expected index, with the set of timestamps already flagged incohérente.
+    Returns None if the meter has no readings to work from."""
+    meter_id = anomaly.meter_id
+    meter = db.query(Meter).get(meter_id)
+    readings = (
+        db.query(Reading)
+        .filter(Reading.meter_id == meter_id, Reading.import_batch_id == batch.id)
+        .order_by(Reading.timestamp)
+        .all()
+    )
+    if not readings:
+        return None
+
+    from app.services.quality_engine import infer_granularity, _build_expected_index
+
+    df = pd.DataFrame({"timestamp": [r.timestamp for r in readings], "value": [r.raw_value for r in readings]})
+    granularity = infer_granularity(pd.Series(df["timestamp"]))
+    expected_index = _build_expected_index(df["timestamp"].min(), df["timestamp"].max(), granularity)
+    series = df.set_index("timestamp")["value"]
+    series = series[~series.index.duplicated(keep="last")]
+    aligned = series.reindex(expected_index)
+
+    bad_ts = {
+        pd.Timestamp(r.timestamp)
+        for r in readings
+        if r.quality == ReadingQuality.INCOHERENCE and pd.Timestamp(r.timestamp) in expected_index
+    }
+
+    period_mask = (expected_index >= pd.Timestamp(anomaly.period_start)) & (
+        expected_index <= pd.Timestamp(anomaly.period_end)
+    )
+    period_ts = sorted(expected_index[period_mask])
+
+    return {
+        "meter": meter,
+        "readings": readings,
+        "by_ts": {pd.Timestamp(r.timestamp): r for r in readings},
+        "granularity": granularity,
+        "expected_index": expected_index,
+        "aligned": aligned,
+        "bad_ts": bad_ts,
+        "period_ts": period_ts,
+    }
+
+
+def correction_options_for_anomaly(db: Session, anomaly: Anomaly) -> list[dict]:
+    """The reconstruction techniques worth offering as a choice for this
+    anomaly's meter — tailored by fluid/meter type (see
+    reconstruction_engine.available_correction_methods)."""
+    meter = db.query(Meter).get(anomaly.meter_id)
+    if meter is None:
+        return []
+    from app.services.reconstruction_engine import available_correction_methods
+
+    return available_correction_methods(meter.measurement_kind, meter.role)
+
+
+def preview_correction(db: Session, batch: ImportBatch, anomaly: Anomaly, method: str) -> list[dict]:
+    """What applying `method` to this one anomaly's period WOULD produce,
+    without writing anything — lets the person compare techniques before
+    committing to one."""
+    ctx = _anomaly_series_context(db, batch, anomaly)
+    if ctx is None:
+        return []
+
+    result = reconstruct_series(
+        ctx["expected_index"], ctx["aligned"], ctx["bad_ts"], ctx["granularity"], method=method
+    )
+
+    points = []
+    for ts in ctx["period_ts"]:
+        r = ctx["by_ts"].get(ts)
+        current = r.value if r is not None else None
+        proposed = float(result.values[ts]) if pd.notna(result.values.get(ts)) else None
+        points.append(
+            {
+                "timestamp": ts.to_pydatetime(),
+                "current_value": current,
+                "proposed_value": proposed,
+            }
+        )
+    return points
+
+
+def resolve_anomaly(
+    db: Session, batch: ImportBatch, anomaly: Anomaly, resolution: str, method: str | None = None
+) -> dict:
     """Step 2 of the wizard ("Traiter et reconstruire"): record the
     person's decision for one flagged zone.
 
     - "validee": the zone is kept exactly as imported (e.g. a legitimate
       meter replacement, or a production meter's negative convention) — no
       reading is touched, only the anomaly's own resolution is recorded.
-    - "corrigee": the zone is reconstructed right away, using the same
-      profil-type/interpolation simulation as the final step, but applied
-      only to this anomaly's own period so zones not yet reviewed are left
-      alone."""
+    - "corrigee": the zone is reconstructed right away, applied only to
+      this anomaly's own period so zones not yet reviewed are left alone.
+      `method` picks which technique to use (see
+      reconstruction_engine.available_correction_methods); when omitted,
+      the automatic profil-type -> interpolation cascade is used, as
+      before."""
     resolution_enum = AnomalyResolution(resolution)
     anomaly.resolution = resolution_enum
     stats: dict = {"anomaly_id": str(anomaly.id), "resolution": resolution}
 
     if resolution_enum == AnomalyResolution.CORRIGEE:
-        meter_id = anomaly.meter_id
-        meter = db.query(Meter).get(meter_id)
-        readings = (
-            db.query(Reading)
-            .filter(Reading.meter_id == meter_id, Reading.import_batch_id == batch.id)
-            .order_by(Reading.timestamp)
-            .all()
-        )
-        if readings:
-            from app.services.quality_engine import infer_granularity, _build_expected_index
-
-            df = pd.DataFrame({"timestamp": [r.timestamp for r in readings], "value": [r.raw_value for r in readings]})
-            granularity = infer_granularity(pd.Series(df["timestamp"]))
-            expected_index = _build_expected_index(df["timestamp"].min(), df["timestamp"].max(), granularity)
-            series = df.set_index("timestamp")["value"]
-            series = series[~series.index.duplicated(keep="last")]
-            aligned = series.reindex(expected_index)
-
-            bad_ts = {
-                pd.Timestamp(r.timestamp)
-                for r in readings
-                if r.quality == ReadingQuality.INCOHERENCE and pd.Timestamp(r.timestamp) in expected_index
-            }
-
-            result = reconstruct_series(expected_index, aligned, bad_ts, granularity)
-
-            period_mask = (expected_index >= pd.Timestamp(anomaly.period_start)) & (
-                expected_index <= pd.Timestamp(anomaly.period_end)
+        ctx = _anomaly_series_context(db, batch, anomaly)
+        if ctx is not None:
+            meter = ctx["meter"]
+            result = reconstruct_series(
+                ctx["expected_index"], ctx["aligned"], ctx["bad_ts"], ctx["granularity"], method=method
             )
-            period_ts = set(expected_index[period_mask])
-            by_ts = {pd.Timestamp(r.timestamp): r for r in readings}
+
             n_applied = 0
-            for ts in period_ts:
+            for ts in ctx["period_ts"]:
                 if ts not in result.methods_used:
                     continue
-                r = by_ts.get(ts)
+                r = ctx["by_ts"].get(ts)
                 new_val = float(result.values[ts]) if pd.notna(result.values[ts]) else None
                 if r is not None:
                     r.value = new_val
@@ -617,7 +738,7 @@ def resolve_anomaly(db: Session, batch: ImportBatch, anomaly: Anomaly, resolutio
                 else:
                     db.add(
                         Reading(
-                            meter_id=meter_id,
+                            meter_id=meter.id,
                             import_batch_id=batch.id,
                             timestamp=ts.to_pydatetime(),
                             value=new_val,
@@ -628,12 +749,15 @@ def resolve_anomaly(db: Session, batch: ImportBatch, anomaly: Anomaly, resolutio
                     )
                 n_applied += 1
             stats["points_reconstructed"] = n_applied
+            stats["method"] = method or "profil_type + interpolation"
 
     db.add(
         ProcessingHistory(
             import_batch_id=batch.id,
             action=ProcessingAction.REANALYSE,
-            reconstruction_method="profil_type + interpolation (zone)" if resolution_enum == AnomalyResolution.CORRIGEE else None,
+            reconstruction_method=(method or "profil_type + interpolation") + " (zone)"
+            if resolution_enum == AnomalyResolution.CORRIGEE
+            else None,
             stats=stats,
         )
     )
@@ -644,6 +768,10 @@ def resolve_anomaly(db: Session, batch: ImportBatch, anomaly: Anomaly, resolutio
 
 def reject_batch(db: Session, batch: ImportBatch) -> ImportBatch:
     batch.status = ImportStatus.REFUSE
+    # A refused file's quality/reliability index is no longer meaningful —
+    # clear it so the stored record itself reflects "non valide" rather
+    # than leaving a stale percentage from before the refusal.
+    batch.quality_score = None
     db.add(ProcessingHistory(import_batch_id=batch.id, action=ProcessingAction.REFUSE, stats={}))
     db.commit()
     db.refresh(batch)
