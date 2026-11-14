@@ -147,17 +147,20 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   s.addText("≈ 750 h / an", { x: 0.8, y: 1.15, w: 3.2, h: 1.15, fontFace: "Cambria", fontSize: 36, bold: true, color: "0B1426", margin: 0, valign: "middle", isTextBox: true, objectName: "Chiffre impact" });
   s.addText("de correction manuelle évitées pour 1 000 compteurs. Hypothèses : 5 zones par compteur et par an, 10 min à la main contre 1 min avec l'outil.", { x: 4.1, y: 1.15, w: 5.15, h: 1.15, fontFace: "Calibri", fontSize: 16, color: "0B1426", margin: 0, valign: "middle", isTextBox: true, objectName: "Hypothèses impact" });
   const cards = [
-    ["FaBalanceScale", "Pour la Ville", "Moins de nettoyage, des consommations fiables"],
-    ["FaGlobe", "Transposable", "Aucun fluide codé en dur : autres services, autres communes"],
-    ["FaCodeBranch", "Reprenable", "Code ouvert (licence MIT), Docker ou exécutable"],
+    ["FaBalanceScale", "Pour la Ville", "Moins de nettoyage, des données fiables"],
+    ["FaGlobe", "Transposable", "Aucun fluide codé en dur"],
+    ["FaCodeBranch", "Reprenable", "Code ouvert (MIT), Docker ou exécutable"],
   ];
   cards.forEach((cd, i) => {
-    const x = 0.6 + i * 3.0;
-    s.addShape(pres.ShapeType.roundRect, { x, y: 2.5, w: 2.8, h: 2.3, rectRadius: 0.08, fill: { color: "1F3A66" }, line: { color: "1F3A66" }, objectName: `Carte ${cd[1]}` });
-    circleIcon(s, ic[cd[0]], x + 0.25, 2.65, 0.55, "F5A524", `Icône ${cd[1]}`);
-    s.addText(cd[1], { x: x + 0.25, y: 3.3, w: 2.4, h: 0.4, fontFace: "Cambria", fontSize: 20, bold: true, color: C.background1, margin: 0, isTextBox: true });
-    s.addText(cd[2], { x: x + 0.25, y: 3.75, w: 2.4, h: 1.0, fontFace: "Calibri", fontSize: 16, color: C.background1, margin: 0, valign: "top", isTextBox: true });
+    const x = 0.6 + i * 2.15;
+    s.addShape(pres.ShapeType.roundRect, { x, y: 2.5, w: 2.0, h: 2.3, rectRadius: 0.08, fill: { color: "1F3A66" }, line: { color: "1F3A66" }, objectName: `Carte ${cd[1]}` });
+    circleIcon(s, ic[cd[0]], x + 0.2, 2.65, 0.55, "F5A524", `Icône ${cd[1]}`);
+    s.addText(cd[1], { x: x + 0.2, y: 3.3, w: 1.65, h: 0.4, fontFace: "Cambria", fontSize: 18, bold: true, color: C.background1, margin: 0, isTextBox: true });
+    s.addText(cd[2], { x: x + 0.2, y: 3.75, w: 1.65, h: 1.0, fontFace: "Calibri", fontSize: 16, color: C.background1, margin: 0, valign: "top", isTextBox: true });
   });
+  s.addShape(pres.ShapeType.roundRect, { x: 7.05, y: 2.5, w: 2.35, h: 2.3, rectRadius: 0.08, fill: { color: "FFFFFF" }, line: { color: "FFFFFF" }, objectName: "Carte QR" });
+  s.addImage({ path: path.join(__dirname, "qr-depot.png"), x: 7.4, y: 2.6, w: 1.65, h: 1.65, altText: "QR code vers le dépôt GitHub loicgilbert74000-coder/qualif-comptage", objectName: "QR code dépôt" });
+  s.addText("Code source : scannez", { x: 7.1, y: 4.3, w: 2.25, h: 0.4, fontFace: "Calibri", fontSize: 14, bold: true, color: "0B1426", align: "center", margin: 0, isTextBox: true, objectName: "Légende QR" });
   s.addText("Suite : détecter les ruptures communes à plusieurs compteurs d'un même automate.", { x: 0.6, y: 4.95, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 16, italic: true, color: C.accent6, margin: 0, isTextBox: true, objectName: "Suite" });
 
   // Notes (≈ 3 min, ~430 mots)
