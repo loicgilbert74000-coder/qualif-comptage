@@ -113,7 +113,7 @@ function circleIcon(slide, img, x, y, d, fill, name) {
     showValAxisTitle: true, valAxisTitle: "kWh / h (simulé)", valAxisTitleFontSize: 10, valAxisTitleColor: HEX.a5, valAxisTitleFontFace: "+mn-lt",
     displayBlanksAs: "gap",
   });
-  const stats = [[`${sim.ncorr}`, "points corrigés\n(8 manquants, 13 incohérents)"], [`${sim.err_pct} %`, "écart moyen avec\nla vraie valeur"], ["1 clic", "pour valider\nla correction"]];
+  const stats = [[`${sim.ncorr}`, "points corrigés\n(8 manquants, 13 incohérents)"], [`${sim.err_pct} %`, "écart moyen avec\nla vraie valeur"], ["50/50", "anomalies injectées\ndétectées (audit)"]];
   stats.forEach((st, i) => {
     const y = 1.35 + i * 1.18;
     s.addShape(pres.ShapeType.roundRect, { x: 7.15, y, w: 2.35, h: 1.05, rectRadius: 0.08, fill: { color: C.background2 }, line: { color: C.background2 }, objectName: `Carte chiffre ${i + 1}` });
@@ -127,18 +127,21 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   s = pres.addSlide({ masterName: "LIGHT", sectionTitle: "Limites et reprise" });
   s.addText("Ce qui marche, ce qui reste à faire", { placeholder: "title", align: "left", valign: "top" });
   const col = (x, head, color, icn, items) => {
-    s.addShape(pres.ShapeType.roundRect, { x, y: 1.4, w: 4.3, h: 2.9, rectRadius: 0.08, fill: { color: C.background2 }, line: { color: C.background2 }, objectName: `Carte ${head}` });
+    s.addShape(pres.ShapeType.roundRect, { x, y: 1.4, w: 4.3, h: 3.3, rectRadius: 0.08, fill: { color: C.background2 }, line: { color: C.background2 }, objectName: `Carte ${head}` });
     circleIcon(s, ic[icn], x + 0.25, 1.6, 0.5, color, `Icône ${head}`);
     s.addText(head, { x: x + 0.9, y: 1.6, w: 3.2, h: 0.5, fontFace: "Cambria", fontSize: 20, bold: true, color: C.text1, margin: 0, valign: "middle", isTextBox: true });
-    s.addText(items.map((t, i) => ({ text: t, options: { bullet: true, breakLine: i < items.length - 1 } })), { x: x + 0.25, y: 2.3, w: 3.85, h: 2.3, fontFace: "Calibri", fontSize: 14, color: C.text1, margin: 0, valign: "top", paraSpaceAfter: 6, isTextBox: true, objectName: `Liste ${head}` });
+    s.addText(items.map((t, i) => ({ text: t, options: { bullet: true, breakLine: i < items.length - 1 } })), { x: x + 0.25, y: 2.3, w: 3.85, h: 2.6, fontFace: "Calibri", fontSize: 14, color: C.text1, margin: 0, valign: "top", paraSpaceAfter: 6, isTextBox: true, objectName: `Liste ${head}` });
   };
-  col(0.6, "Ça marche", C.accent2, "FaCheck", ["Détection de 7 types d'anomalies, seuils réglables", "Reconstruction avec repli en cascade", "Exécutable Windows/Linux, sans installation", "Code testé et historique des traitements"]);
-  col(5.1, "Pas encore", C.accent3, "FaTimes", ["Le diagnostic « IA » est un jeu de règles, pas un modèle entraîné", "Preuve sur données simulées : validation sur le terrain à faire", "Pas d'authentification ni d'export PDF/Excel"]);
+  col(0.6, "Ça marche", C.accent2, "FaCheck", ["10 types d'anomalies détectés, seuils réglables", "Reconstruction avec repli en cascade", "Exécutable Windows/Linux, sans installation", "18 tests passés, historique des traitements"]);
+  col(5.1, "Pas encore", C.accent3, "FaTimes", ["Le diagnostic « IA » est un jeu de règles, pas un modèle entraîné", "Pas de veille continue : CSV déposés à la main", "Défauts connus (audit) : import sur valeur vide, faux positifs en horaire", "Preuve sur données simulées"]);
 
   // 6 — Impact + suite
   pres.addSection({ title: "Impact et suite" });
   s = pres.addSlide({ masterName: "DARK", sectionTitle: "Impact et suite" });
-  s.addText("Des décisions énergétiques fondées sur des données saines", { x: 0.6, y: 0.5, w: 8.8, h: 1.4, fontFace: "Cambria", fontSize: 30, bold: true, color: C.background1, align: "left", valign: "top", margin: 0, isTextBox: true, objectName: "Titre" });
+  s.addText("Des décisions fondées sur des données saines", { x: 0.6, y: 0.4, w: 8.8, h: 0.7, fontFace: "Cambria", fontSize: 30, bold: true, color: C.background1, align: "left", valign: "top", margin: 0, isTextBox: true, objectName: "Titre" });
+  s.addShape(pres.ShapeType.roundRect, { x: 0.6, y: 1.2, w: 8.8, h: 0.95, rectRadius: 0.08, fill: { color: C.accent1 }, line: { color: C.accent1 }, objectName: "Bandeau impact" });
+  s.addText("≈ 750 h / an", { x: 0.8, y: 1.2, w: 2.9, h: 0.95, fontFace: "Cambria", fontSize: 32, bold: true, color: C.text2, margin: 0, valign: "middle", isTextBox: true, objectName: "Chiffre impact" });
+  s.addText("de correction manuelle évitées pour 1 000 compteurs. Hypothèses : 5 zones à traiter par compteur et par an, 10 min à la main contre 1 min avec l'outil.", { x: 3.75, y: 1.2, w: 5.5, h: 0.95, fontFace: "Calibri", fontSize: 14, color: C.text2, margin: 0, valign: "middle", isTextBox: true, objectName: "Hypothèses impact" });
   const cards = [
     ["FaBalanceScale", "Pour la Ville", "Moins de temps perdu à nettoyer, des consommations fiables pour piloter et décider"],
     ["FaGlobe", "Transposable", "Aucun fluide codé en dur : autres services, autres communes"],
@@ -146,12 +149,12 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   ];
   cards.forEach((cd, i) => {
     const x = 0.6 + i * 3.0;
-    s.addShape(pres.ShapeType.roundRect, { x, y: 2.35, w: 2.8, h: 2.3, rectRadius: 0.08, fill: { color: C.text1 }, line: { color: C.text1 }, objectName: `Carte ${cd[1]}` });
-    circleIcon(s, ic[cd[0]], x + 0.25, 2.55, 0.55, C.accent1, `Icône ${cd[1]}`);
-    s.addText(cd[1], { x: x + 0.25, y: 3.25, w: 2.4, h: 0.4, fontFace: "Cambria", fontSize: 18, bold: true, color: C.background1, margin: 0, isTextBox: true });
-    s.addText(cd[2], { x: x + 0.25, y: 3.65, w: 2.4, h: 0.95, fontFace: "Calibri", fontSize: 14, color: "D5DCEA", margin: 0, valign: "top", isTextBox: true });
+    s.addShape(pres.ShapeType.roundRect, { x, y: 2.4, w: 2.8, h: 2.3, rectRadius: 0.08, fill: { color: C.text1 }, line: { color: C.text1 }, objectName: `Carte ${cd[1]}` });
+    circleIcon(s, ic[cd[0]], x + 0.25, 2.6, 0.55, C.accent1, `Icône ${cd[1]}`);
+    s.addText(cd[1], { x: x + 0.25, y: 3.3, w: 2.4, h: 0.4, fontFace: "Cambria", fontSize: 18, bold: true, color: C.background1, margin: 0, isTextBox: true });
+    s.addText(cd[2], { x: x + 0.25, y: 3.7, w: 2.4, h: 0.95, fontFace: "Calibri", fontSize: 14, color: "D5DCEA", margin: 0, valign: "top", isTextBox: true });
   });
-  s.addText("Suite : détecter les ruptures communes à plusieurs compteurs d'un même automate.", { x: 0.6, y: 4.85, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 14, italic: true, color: C.accent6, margin: 0, isTextBox: true, objectName: "Suite" });
+  s.addText("Suite : détecter les ruptures communes à plusieurs compteurs d'un même automate.", { x: 0.6, y: 4.9, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 14, italic: true, color: C.accent6, margin: 0, isTextBox: true, objectName: "Suite" });
 
   // Notes (≈ 3 min, ~430 mots)
   const N = fs.readFileSync(path.join(__dirname, "notes.json"), "utf8");
