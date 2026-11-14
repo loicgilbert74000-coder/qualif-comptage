@@ -79,7 +79,7 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
   // to it; it's already listed there since quality analysis already gave it
   // the "à valider"/"à corriger" status.
   function goToTraitement() {
-    navigate("/traitements");
+    navigate(`/traitements/${summary.id}`);
   }
 
   return (

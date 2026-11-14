@@ -39,6 +39,9 @@ export interface ImportBatchDetail {
   meters: MeterQualitySummary[];
 }
 
+export type AnomalyResolution = "en_attente" | "validee" | "corrigee";
+export type RecommendedAction = "corriger" | "valider" | "a_decider";
+
 export interface AnomalyOut {
   id: string;
   meter_id: string;
@@ -49,6 +52,10 @@ export interface AnomalyOut {
   period_end: string;
   description: string;
   deviation_pct: number | null;
+  resolution: AnomalyResolution;
+  diagnosis: string;
+  suggestion: string;
+  recommended_action: RecommendedAction;
 }
 
 export interface SeriesPoint {

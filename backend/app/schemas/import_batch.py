@@ -46,9 +46,17 @@ class AnomalyOut(BaseModel):
     period_end: datetime
     description: str
     deviation_pct: float | None
+    resolution: str
+    diagnosis: str
+    suggestion: str
+    recommended_action: str
 
     class Config:
         from_attributes = True
+
+
+class ResolveAnomalyIn(BaseModel):
+    resolution: str  # "validee" | "corrigee"
 
 
 class SeriesPoint(BaseModel):

@@ -37,6 +37,14 @@ def on_startup():
                 "NOT NULL DEFAULT 'indéterminé'"
             ))
 
+    anomaly_columns = {column["name"] for column in inspect(engine).get_columns("anomalies")}
+    if "resolution" not in anomaly_columns:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "ALTER TABLE anomalies ADD COLUMN resolution VARCHAR(16) "
+                "NOT NULL DEFAULT 'en_attente'"
+            ))
+
 
 app.include_router(imports.router)
 app.include_router(buildings.router)

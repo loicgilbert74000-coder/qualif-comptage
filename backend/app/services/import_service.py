@@ -20,6 +20,7 @@ from app.models import (
     ReadingQuality,
     Anomaly,
     AnomalyType,
+    AnomalyResolution,
     ProcessingHistory,
     ProcessingAction,
     OrgSettings,
@@ -246,7 +247,23 @@ def run_quality_analysis(db: Session, batch: ImportBatch) -> list[MeterQualityRe
 
 def validate_and_reconstruct(db: Session, batch: ImportBatch) -> dict:
     """Step 3 of the wizard: fill gaps and smooth inconsistencies by
-    simulation, then mark the batch as validated."""
+    simulation, then mark the batch as validated.
+
+    Each anomaly must first have been reviewed on the "Traiter et
+    reconstruire" page: zones marked "validée" (kept as-is) are left
+    untouched here, zones marked "corrigée" were already reconstructed when
+    reviewed (reconstructing them again here is harmless/idempotent)."""
+    pending = (
+        db.query(Anomaly)
+        .filter(Anomaly.import_batch_id == batch.id, Anomaly.resolution == AnomalyResolution.EN_ATTENTE)
+        .count()
+    )
+    if pending:
+        raise ValueError(
+            f"{pending} zone(s) n'ont pas encore été validée(s) ou corrigée(s). "
+            "Traitez chaque zone signalée avant d'enregistrer."
+        )
+
     quality_before = batch.quality_score
     meter_ids = [
         row[0]
@@ -279,7 +296,24 @@ def validate_and_reconstruct(db: Session, batch: ImportBatch) -> dict:
         }
         bad_ts = {pd.Timestamp(t) for t in bad_ts}
 
-        result = reconstruct_series(expected_index, aligned, bad_ts, granularity)
+        # Zones the person explicitly validated "as-is" must stay untouched,
+        # even though they're still flagged incoherente/manquante.
+        validated_anomalies = (
+            db.query(Anomaly)
+            .filter(
+                Anomaly.import_batch_id == batch.id,
+                Anomaly.meter_id == meter_id,
+                Anomaly.resolution == AnomalyResolution.VALIDEE,
+            )
+            .all()
+        )
+        skip_ts: set[pd.Timestamp] = set()
+        for a in validated_anomalies:
+            mask = (expected_index >= pd.Timestamp(a.period_start)) & (expected_index <= pd.Timestamp(a.period_end))
+            skip_ts |= set(expected_index[mask])
+        bad_ts -= skip_ts
+
+        result = reconstruct_series(expected_index, aligned, bad_ts, granularity, skip_timestamps=skip_ts)
         total_filled += result.n_missing_filled
         total_smoothed += result.n_incoherence_smoothed
 
@@ -331,6 +365,90 @@ def validate_and_reconstruct(db: Session, batch: ImportBatch) -> dict:
         "quality_before": quality_before,
         "quality_after": batch.quality_score,
     }
+
+
+def resolve_anomaly(db: Session, batch: ImportBatch, anomaly: Anomaly, resolution: str) -> dict:
+    """Step 2 of the wizard ("Traiter et reconstruire"): record the
+    person's decision for one flagged zone.
+
+    - "validee": the zone is kept exactly as imported (e.g. a legitimate
+      meter replacement, or a production meter's negative convention) — no
+      reading is touched, only the anomaly's own resolution is recorded.
+    - "corrigee": the zone is reconstructed right away, using the same
+      profil-type/interpolation simulation as the final step, but applied
+      only to this anomaly's own period so zones not yet reviewed are left
+      alone."""
+    resolution_enum = AnomalyResolution(resolution)
+    anomaly.resolution = resolution_enum
+    stats: dict = {"anomaly_id": str(anomaly.id), "resolution": resolution}
+
+    if resolution_enum == AnomalyResolution.CORRIGEE:
+        meter_id = anomaly.meter_id
+        meter = db.query(Meter).get(meter_id)
+        readings = (
+            db.query(Reading)
+            .filter(Reading.meter_id == meter_id, Reading.import_batch_id == batch.id)
+            .order_by(Reading.timestamp)
+            .all()
+        )
+        if readings:
+            from app.services.quality_engine import infer_granularity, _build_expected_index
+
+            df = pd.DataFrame({"timestamp": [r.timestamp for r in readings], "value": [r.raw_value for r in readings]})
+            granularity = infer_granularity(pd.Series(df["timestamp"]))
+            expected_index = _build_expected_index(df["timestamp"].min(), df["timestamp"].max(), granularity)
+            series = df.set_index("timestamp")["value"]
+            series = series[~series.index.duplicated(keep="last")]
+            aligned = series.reindex(expected_index)
+
+            bad_ts = {
+                pd.Timestamp(r.timestamp)
+                for r in readings
+                if r.quality == ReadingQuality.INCOHERENCE and pd.Timestamp(r.timestamp) in expected_index
+            }
+
+            result = reconstruct_series(expected_index, aligned, bad_ts, granularity)
+
+            period_mask = (expected_index >= pd.Timestamp(anomaly.period_start)) & (
+                expected_index <= pd.Timestamp(anomaly.period_end)
+            )
+            period_ts = set(expected_index[period_mask])
+            by_ts = {pd.Timestamp(r.timestamp): r for r in readings}
+            n_applied = 0
+            for ts in period_ts:
+                if ts not in result.methods_used:
+                    continue
+                r = by_ts.get(ts)
+                new_val = float(result.values[ts]) if pd.notna(result.values[ts]) else None
+                if r is not None:
+                    r.value = new_val
+                    r.quality = ReadingQuality.RECONSTRUITE
+                else:
+                    db.add(
+                        Reading(
+                            meter_id=meter_id,
+                            import_batch_id=batch.id,
+                            timestamp=ts.to_pydatetime(),
+                            value=new_val,
+                            raw_value=None,
+                            unit=meter.unit,
+                            quality=ReadingQuality.RECONSTRUITE,
+                        )
+                    )
+                n_applied += 1
+            stats["points_reconstructed"] = n_applied
+
+    db.add(
+        ProcessingHistory(
+            import_batch_id=batch.id,
+            action=ProcessingAction.REANALYSE,
+            reconstruction_method="profil_type + interpolation (zone)" if resolution_enum == AnomalyResolution.CORRIGEE else None,
+            stats=stats,
+        )
+    )
+    db.commit()
+    db.refresh(anomaly)
+    return stats
 
 
 def reject_batch(db: Session, batch: ImportBatch) -> ImportBatch:

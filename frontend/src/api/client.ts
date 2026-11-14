@@ -44,6 +44,13 @@ export const api = {
 
   getAnomalies: (batchId: string) => request<AnomalyOut[]>(`/imports/${batchId}/anomalies`),
 
+  resolveAnomaly: (batchId: string, anomalyId: string, resolution: "validee" | "corrigee") =>
+    request<AnomalyOut>(`/imports/${batchId}/anomalies/${anomalyId}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resolution }),
+    }),
+
   getSynthesis: (batchId: string) => request<SynthesisOut>(`/imports/${batchId}/synthesis`),
 
   reanalyze: (batchId: string) =>

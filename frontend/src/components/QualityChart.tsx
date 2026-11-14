@@ -23,13 +23,60 @@ function formatNumber(v: number) {
   return v.toLocaleString("fr-CH", { maximumFractionDigits: Math.abs(v) < 10 ? 2 : 0 });
 }
 
+// Binary search helpers over an ascending array of epoch-ms timestamps.
+function lowerBound(arr: number[], target: number): number {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+function upperBound(arr: number[], target: number): number {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] <= target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo - 1;
+}
+
+export interface ChartZone {
+  id: string;
+  period_start: string;
+  period_end: string;
+  resolution: "en_attente" | "validee" | "corrigee";
+}
+
+const ZONE_COLORS: Record<ChartZone["resolution"], { fill: string; stroke: string }> = {
+  en_attente: { fill: "rgba(239,68,68,0.12)", stroke: "rgba(220,38,38,0.55)" },
+  validee: { fill: "rgba(34,197,94,0.14)", stroke: "rgba(22,163,74,0.5)" },
+  corrigee: { fill: "rgba(59,130,246,0.12)", stroke: "rgba(37,99,235,0.45)" },
+};
+
 interface Props {
   points: SeriesPoint[];
   unit: string;
   granularity: string;
+  /** Tailwind height class for the plot area; defaults to "h-80". */
+  height?: string;
+  /** Clickable problem zones drawn over the chart (step 2 of the wizard). */
+  zones?: ChartZone[];
+  selectedZoneId?: string | null;
+  onSelectZone?: (id: string | null) => void;
 }
 
-export default function QualityChart({ points, unit, granularity }: Props) {
+export default function QualityChart({
+  points,
+  unit,
+  granularity,
+  height,
+  zones = [],
+  selectedZoneId = null,
+  onSelectZone,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastIndex = Math.max(points.length - 1, 0);
@@ -214,6 +261,43 @@ export default function QualityChart({ points, unit, granularity }: Props) {
     if (!dragStateRef.current) setHover(null);
   }
 
+  // --- clickable problem zones ---
+  // Index ranges are computed against the FULL points array (not the
+  // zoomed-in visible slice) once per points/zones change, then converted
+  // to visible-slice pixel ranges on every draw() for hit-testing clicks.
+  const zoneIndexRanges = useMemo(() => {
+    if (zones.length === 0) return [];
+    const times = points.map((p) => +new Date(p.timestamp));
+    return zones
+      .map((z) => {
+        const startIdx = lowerBound(times, +new Date(z.period_start));
+        const endIdx = upperBound(times, +new Date(z.period_end));
+        return { id: z.id, resolution: z.resolution, startIdx, endIdx };
+      })
+      .filter((z) => z.endIdx >= z.startIdx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points, zones]);
+
+  const zonesPxRef = useRef<{ id: string; x1: number; x2: number }[]>([]);
+  const onSelectZoneRef = useRef(onSelectZone);
+  useEffect(() => {
+    onSelectZoneRef.current = onSelectZone;
+  }, [onSelectZone]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    function onClick(e: globalThis.MouseEvent) {
+      if (!onSelectZoneRef.current) return;
+      const rect = el!.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const hit = zonesPxRef.current.find((z) => x >= z.x1 && x <= z.x2);
+      onSelectZoneRef.current(hit ? hit.id : null);
+    }
+    el.addEventListener("click", onClick);
+    return () => el.removeEventListener("click", onClick);
+  }, []);
+
   // --- canvas drawing ---
   function draw() {
     const canvas = canvasRef.current;
@@ -282,18 +366,45 @@ export default function QualityChart({ points, unit, granularity }: Props) {
     ctx.fillText(unit, 0, 0);
     ctx.restore();
 
-    // shaded bands for contiguous "manquante" runs
-    ctx.fillStyle = "rgba(156,163,175,0.18)";
     const halfStep = n > 1 ? plotW / (n - 1) / 2 : 6;
-    let bandStart: number | null = null;
-    for (let i = 0; i <= n; i++) {
-      const missing = i < n && visiblePoints[i].quality === "manquante";
-      if (missing && bandStart === null) bandStart = i;
-      if (!missing && bandStart !== null) {
-        const x1 = xAt(bandStart) - halfStep;
-        const x2 = xAt(i - 1) + halfStep;
+
+    if (zoneIndexRanges.length > 0) {
+      // Clickable problem zones (step 2 of the wizard): colored by
+      // resolution status, with a stronger outline on the selected one.
+      const zonesPx: { id: string; x1: number; x2: number }[] = [];
+      for (const z of zoneIndexRanges) {
+        const visStart = z.startIdx - start;
+        const visEnd = z.endIdx - start;
+        if (visEnd < 0 || visStart > n - 1) continue;
+        const x1 = xAt(Math.max(visStart, 0)) - halfStep;
+        const x2 = xAt(Math.min(visEnd, n - 1)) + halfStep;
+        const colors = ZONE_COLORS[z.resolution];
+        ctx.fillStyle = colors.fill;
         ctx.fillRect(x1, plotTop, x2 - x1, plotH);
-        bandStart = null;
+        const selected = z.id === selectedZoneId;
+        ctx.strokeStyle = selected ? "#0f4c75" : colors.stroke;
+        ctx.lineWidth = selected ? 2.5 : 1.2;
+        ctx.setLineDash(selected ? [] : [4, 3]);
+        ctx.strokeRect(x1, plotTop, x2 - x1, plotH);
+        ctx.setLineDash([]);
+        zonesPx.push({ id: z.id, x1, x2 });
+      }
+      zonesPxRef.current = zonesPx;
+    } else {
+      zonesPxRef.current = [];
+      // No zones to review here (e.g. step 1's read-only preview): fall
+      // back to plain shaded bands for contiguous "manquante" runs.
+      ctx.fillStyle = "rgba(156,163,175,0.18)";
+      let bandStart: number | null = null;
+      for (let i = 0; i <= n; i++) {
+        const missing = i < n && visiblePoints[i].quality === "manquante";
+        if (missing && bandStart === null) bandStart = i;
+        if (!missing && bandStart !== null) {
+          const x1 = xAt(bandStart) - halfStep;
+          const x2 = xAt(i - 1) + halfStep;
+          ctx.fillRect(x1, plotTop, x2 - x1, plotH);
+          bandStart = null;
+        }
       }
     }
 
@@ -377,7 +488,7 @@ export default function QualityChart({ points, unit, granularity }: Props) {
     ro.observe(wrap);
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visiblePoints, unit, granularity, hover]);
+  }, [visiblePoints, unit, granularity, hover, zoneIndexRanges, selectedZoneId, start]);
 
   const hoverTooltip = useMemo(() => {
     if (!hover) return null;
@@ -408,7 +519,7 @@ export default function QualityChart({ points, unit, granularity }: Props) {
       </div>
       <div
         ref={containerRef}
-        className="relative h-80 w-full select-none"
+        className={`relative w-full select-none ${height ?? "h-80"} ${zones.length > 0 ? "cursor-pointer" : ""}`}
         style={{ touchAction: "none", overscrollBehavior: "contain" }}
         onMouseMove={onMouseMoveReact}
         onMouseLeave={onMouseLeaveReact}
@@ -430,23 +541,39 @@ export default function QualityChart({ points, unit, granularity }: Props) {
           </div>
         )}
       </div>
-      <div className="mt-2 flex items-center gap-6 text-xs text-gray-500">
+      <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-xs text-gray-500">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-0.5 w-4 bg-geneva-600" /> Valeur valide
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" /> Incohérence (valeur anomale)
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span
-            className="inline-block h-2.5 w-4 bg-gray-400/30"
-            style={{
-              backgroundImage:
-                "repeating-linear-gradient(45deg, rgba(107,114,128,.5) 0, rgba(107,114,128,.5) 2px, transparent 2px, transparent 5px)",
-            }}
-          />
-          Valeur manquante (absence de relevé)
-        </span>
+        {zones.length === 0 ? (
+          <>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" /> Incohérence (valeur anomale)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block h-2.5 w-4 bg-gray-400/30"
+                style={{
+                  backgroundImage:
+                    "repeating-linear-gradient(45deg, rgba(107,114,128,.5) 0, rgba(107,114,128,.5) 2px, transparent 2px, transparent 5px)",
+                }}
+              />
+              Valeur manquante (absence de relevé)
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-red-400 bg-red-500/10" /> Zone à traiter (cliquer)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-green-500 bg-green-500/10" /> Validée en l'état
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-blue-500 bg-blue-500/10" /> Corrigée
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

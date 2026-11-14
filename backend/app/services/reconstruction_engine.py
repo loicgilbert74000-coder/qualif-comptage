@@ -41,7 +41,9 @@ def reconstruct_series(
     aligned_values: pd.Series,          # may contain NaN for missing
     bad_timestamps: set[pd.Timestamp],  # points flagged incoherent -> to smooth
     granularity: str,
+    skip_timestamps: set[pd.Timestamp] | None = None,  # left untouched even if missing/incoherent
 ) -> ReconstructionResult:
+    skip_timestamps = skip_timestamps or set()
     values = aligned_values.copy()
     valid_mask = (~values.index.isin(bad_timestamps)) & values.notna()
 
@@ -52,7 +54,7 @@ def reconstruct_series(
         profile[key] = float(grp.median())
 
     methods: dict = {}
-    targets = sorted(set(bad_timestamps) | set(values.index[values.isna()]))
+    targets = sorted((set(bad_timestamps) | set(values.index[values.isna()])) - skip_timestamps)
     result = values.copy()
 
     for ts in targets:

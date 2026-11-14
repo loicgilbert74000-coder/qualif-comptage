@@ -10,11 +10,13 @@ from app.schemas.import_batch import (
     ImportBatchDetail,
     MeterQualitySummary,
     AnomalyOut,
+    ResolveAnomalyIn,
     SeriesPoint,
     SynthesisOut,
     ValidateResponse,
 )
 from app.services import import_service
+from app.services.diagnosis_engine import diagnose
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 
@@ -103,30 +105,63 @@ def get_series(batch_id: UUID, meter_id: UUID, db: Session = Depends(get_db)):
     return [SeriesPoint(timestamp=r.timestamp, value=r.value, quality=r.quality.value) for r in rows]
 
 
+def _anomaly_out(a: Anomaly, meter: Meter) -> AnomalyOut:
+    d = diagnose(
+        subtype=a.subtype,
+        anomaly_type=a.type.value,
+        measurement_kind=meter.measurement_kind,
+        fluid_type=meter.fluid_type,
+        role=meter.role,
+        deviation_pct=a.deviation_pct,
+    )
+    return AnomalyOut(
+        id=a.id,
+        meter_id=a.meter_id,
+        meter_code=meter.code,
+        type=a.type.value,
+        subtype=a.subtype,
+        period_start=a.period_start,
+        period_end=a.period_end,
+        description=a.description,
+        deviation_pct=a.deviation_pct,
+        resolution=a.resolution.value,
+        diagnosis=d.diagnosis,
+        suggestion=d.suggestion,
+        recommended_action=d.recommended_action,
+    )
+
+
 @router.get("/{batch_id}/anomalies", response_model=list[AnomalyOut])
 def get_anomalies(batch_id: UUID, db: Session = Depends(get_db)):
     _get_batch_or_404(db, batch_id)
     rows = (
-        db.query(Anomaly, Meter.code)
+        db.query(Anomaly, Meter)
         .join(Meter, Meter.id == Anomaly.meter_id)
         .filter(Anomaly.import_batch_id == batch_id)
         .order_by(Anomaly.period_start)
         .all()
     )
-    return [
-        AnomalyOut(
-            id=a.id,
-            meter_id=a.meter_id,
-            meter_code=code,
-            type=a.type.value,
-            subtype=a.subtype,
-            period_start=a.period_start,
-            period_end=a.period_end,
-            description=a.description,
-            deviation_pct=a.deviation_pct,
-        )
-        for a, code in rows
-    ]
+    return [_anomaly_out(a, meter) for a, meter in rows]
+
+
+@router.post("/{batch_id}/anomalies/{anomaly_id}/resolve", response_model=AnomalyOut)
+def resolve_anomaly(batch_id: UUID, anomaly_id: UUID, payload: ResolveAnomalyIn, db: Session = Depends(get_db)):
+    batch = _get_batch_or_404(db, batch_id)
+    anomaly = (
+        db.query(Anomaly)
+        .filter(Anomaly.id == anomaly_id, Anomaly.import_batch_id == batch_id)
+        .one_or_none()
+    )
+    if anomaly is None:
+        raise HTTPException(404, "Anomalie introuvable")
+    if payload.resolution not in ("validee", "corrigee"):
+        raise HTTPException(400, "Résolution invalide : 'validee' ou 'corrigee' attendu.")
+    try:
+        import_service.resolve_anomaly(db, batch, anomaly, payload.resolution)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    meter = db.query(Meter).get(anomaly.meter_id)
+    return _anomaly_out(anomaly, meter)
 
 
 @router.get("/{batch_id}/synthesis", response_model=SynthesisOut)
@@ -163,7 +198,10 @@ def reject(batch_id: UUID, db: Session = Depends(get_db)):
 @router.post("/{batch_id}/validate", response_model=ValidateResponse)
 def validate(batch_id: UUID, db: Session = Depends(get_db)):
     batch = _get_batch_or_404(db, batch_id)
-    result = import_service.validate_and_reconstruct(db, batch)
+    try:
+        result = import_service.validate_and_reconstruct(db, batch)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return ValidateResponse(**result)
 
 

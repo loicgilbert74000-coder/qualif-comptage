@@ -14,6 +14,12 @@ class AnomalyType(str, enum.Enum):
     MANQUANTE = "manquante"
 
 
+class AnomalyResolution(str, enum.Enum):
+    EN_ATTENTE = "en_attente"   # not yet reviewed on the "Traiter et reconstruire" page
+    VALIDEE = "validee"         # reviewed and kept as-is (legitimate event, no correction wanted)
+    CORRIGEE = "corrigee"       # reviewed and corrected by simulation (profil type / interpolation)
+
+
 class Anomaly(Base):
     """A detected period-level issue on one meter within one import batch,
     matching the 'Détail des anomalies' table of the mock-up (période / type
@@ -30,6 +36,9 @@ class Anomaly(Base):
     period_end: Mapped[datetime] = mapped_column(DateTime)
     description: Mapped[str] = mapped_column(String(512))
     deviation_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    resolution: Mapped[AnomalyResolution] = mapped_column(
+        Enum(AnomalyResolution), default=AnomalyResolution.EN_ATTENTE, server_default="en_attente"
+    )
 
     import_batch: Mapped["ImportBatch"] = relationship(back_populates="anomalies")
     meter: Mapped["Meter"] = relationship()
