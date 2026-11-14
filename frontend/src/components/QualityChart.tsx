@@ -240,8 +240,8 @@ export default function QualityChart({ points, unit, granularity }: Props) {
     const n = visiblePoints.length;
     if (n === 0) return;
 
-    const values = visiblePoints.map((p) => (p.quality === "manquante" ? NaN : p.value));
-    const finite = values.filter((v) => Number.isFinite(v));
+    const values = visiblePoints.map((p) => (p.quality === "manquante" || p.value === null ? NaN : p.value));
+    const finite = values.filter((v): v is number => Number.isFinite(v));
     let yMin = finite.length ? Math.min(...finite) : 0;
     let yMax = finite.length ? Math.max(...finite) : 1;
     if (yMin === yMax) {
@@ -325,7 +325,7 @@ export default function QualityChart({ points, unit, granularity }: Props) {
     for (let i = 0; i < n; i++) {
       if (visiblePoints[i].quality !== "incoherence") continue;
       const x = xAt(i);
-      const y = yAt(visiblePoints[i].value);
+      const y = yAt(visiblePoints[i].value ?? 0);
       ctx.beginPath();
       ctx.arc(x, y, 4.5, 0, Math.PI * 2);
       ctx.fillStyle = "#ef4444";
