@@ -30,6 +30,7 @@ from app.models import (
 from app.services.csv_parser import parse_csv_bytes, ParseResult
 from app.services.quality_engine import analyze_series, batch_quality_score, MeterQualityReport
 from app.services.reconstruction_engine import reconstruct_series
+from app.services.site_reference import lookup_site_name
 
 QUALITY_OK_THRESHOLD = 90.0  # >= this -> "à valider", below -> "à corriger"
 
@@ -47,19 +48,32 @@ def get_org_settings(db: Session) -> OrgSettings:
 def _get_or_create_building(db: Session, code: str) -> Building:
     b = db.query(Building).filter(Building.code == code).one_or_none()
     if b is None:
-        b = Building(code=code, name=code)
+        # Use the real site name from the OSTRAL sites catalogue when this
+        # building's code matches a known id_site, instead of defaulting
+        # the display name to the raw code.
+        name = lookup_site_name(code) or code
+        b = Building(code=code, name=name)
         db.add(b)
         db.flush()
+    elif b.name == b.code:
+        # Backfill a name for a building that was created before this
+        # lookup existed (or from a file where no name was resolvable
+        # at the time) but now matches a known site.
+        resolved = lookup_site_name(code)
+        if resolved:
+            b.name = resolved
     return b
 
 
 def _get_or_create_meter(db: Session, building: Building, parsed) -> Meter:
     m = db.query(Meter).filter(Meter.code == parsed.meter_code).one_or_none()
     if m is None:
+        site_name = lookup_site_name(parsed.meter_code)
+        label = f"{site_name} ({parsed.meter_code})" if site_name else parsed.meter_code
         m = Meter(
             building_id=building.id,
             code=parsed.meter_code,
-            label=parsed.meter_code,
+            label=label,
             fluid_type=parsed.fluid_type or "inconnu",
             unit=parsed.unit or "unité",
             role=parsed.role or "général",

@@ -79,7 +79,10 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
   // to it; it's already listed there since quality analysis already gave it
   // the "à valider"/"à corriger" status.
   function goToTraitement() {
-    navigate(`/traitements/${summary.id}`);
+    // Carry over the meter currently selected here, so "Traiter et
+    // reconstruire" starts on the same meter instead of defaulting to the
+    // batch's first one.
+    navigate(`/traitements/${summary.id}`, { state: { meterId: selectedMeterId } });
   }
 
   return (

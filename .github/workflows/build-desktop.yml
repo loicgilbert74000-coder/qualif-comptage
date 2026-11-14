@@ -99,6 +99,7 @@ jobs:
           fi
           pyinstaller --onefile --name QualifComptage \
             --add-data "frontend_dist${SEP}frontend_dist" \
+            --add-data "app/reference_data${SEP}app/reference_data" \
             --collect-all pandas \
             --collect-all numpy \
             --collect-submodules uvicorn \

@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import clsx from "clsx";
 import TopBar from "../components/TopBar";
 import QualityChart from "../components/QualityChart";
-import type { ChartZone } from "../components/QualityChart";
+import type { ChartZone, PreviewPoint } from "../components/QualityChart";
 import LoadingOverlay from "../components/LoadingOverlay";
-import CorrectionPreviewChart from "../components/CorrectionPreviewChart";
 import { api } from "../api/client";
 import type {
   ImportBatchDetail,
@@ -30,13 +29,19 @@ const RESOLUTION_STYLE: Record<AnomalyResolution, string> = {
 export default function TraitementDetailPage() {
   const { batchId } = useParams<{ batchId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // The meter selected on the Qualification page ("page principale"), if
+  // we were sent here from there — see DetailedAnalysis.goToTraitement().
+  // Treated first instead of defaulting to the batch's first meter.
+  const incomingMeterId = (location.state as { meterId?: string } | null)?.meterId;
 
   const [detail, setDetail] = useState<ImportBatchDetail | null>(null);
   const [anomalies, setAnomalies] = useState<AnomalyOut[]>([]);
-  const [selectedMeterId, setSelectedMeterId] = useState("");
+  const [selectedMeterId, setSelectedMeterId] = useState(incomingMeterId ?? "");
   const [series, setSeries] = useState<SeriesPoint[]>([]);
   const [loadingSeries, setLoadingSeries] = useState(false);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [previewPoints, setPreviewPoints] = useState<PreviewPoint[]>([]);
   const [busy, setBusy] = useState<string | null>(null); // `resolve:<id>` | "finalize"
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -46,7 +51,11 @@ export default function TraitementDetailPage() {
     const [d, a] = await Promise.all([api.getImport(batchId), api.getAnomalies(batchId)]);
     setDetail(d);
     setAnomalies(a);
-    setSelectedMeterId((cur) => cur || d.meters[0]?.meter_id || "");
+    setSelectedMeterId((cur) => {
+      if (cur) return cur;
+      const preferred = incomingMeterId && d.meters.some((m) => m.meter_id === incomingMeterId) ? incomingMeterId : null;
+      return preferred ?? d.meters[0]?.meter_id ?? "";
+    });
   }
 
   useEffect(() => {
@@ -111,6 +120,15 @@ export default function TraitementDetailPage() {
     resolution: a.resolution,
   }));
 
+  // Clears the correction-preview overlay whenever the selected zone
+  // changes, so a stale preview for the previous zone never gets drawn
+  // inside the newly-selected zone's pixel span while DiagnosisPanel
+  // fetches the new one.
+  function selectZone(id: string | null) {
+    setSelectedZoneId(id);
+    setPreviewPoints([]);
+  }
+
   async function resolve(resolution: "validee" | "corrigee", method?: string) {
     if (!batchId || !selectedAnomaly) return;
     setBusy(`resolve:${selectedAnomaly.id}`);
@@ -118,7 +136,7 @@ export default function TraitementDetailPage() {
     try {
       await api.resolveAnomaly(batchId, selectedAnomaly.id, resolution, method);
       await Promise.all([refresh(), loadSeries()]);
-      setSelectedZoneId(null);
+      selectZone(null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -143,7 +161,7 @@ export default function TraitementDetailPage() {
       const next = metersWithPending.find((m) => m.meter_id !== selectedMeterId);
       if (next) {
         setSelectedMeterId(next.meter_id);
-        setSelectedZoneId(null);
+        selectZone(null);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -199,7 +217,7 @@ export default function TraitementDetailPage() {
               value={selectedMeterId}
               onChange={(e) => {
                 setSelectedMeterId(e.target.value);
-                setSelectedZoneId(null);
+                selectZone(null);
               }}
             >
               {meters.map((m) => {
@@ -233,7 +251,7 @@ export default function TraitementDetailPage() {
                 key={m.meter_id}
                 onClick={() => {
                   setSelectedMeterId(m.meter_id);
-                  setSelectedZoneId(null);
+                  selectZone(null);
                 }}
                 className={clsx(
                   "rounded-full border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100",
@@ -257,6 +275,7 @@ export default function TraitementDetailPage() {
               busy={busy === `resolve:${selectedAnomaly.id}`}
               onValidate={() => resolve("validee")}
               onCorrect={(method) => resolve("corrigee", method)}
+              onPreviewChange={setPreviewPoints}
             />
           ) : (
             <div>
@@ -281,7 +300,8 @@ export default function TraitementDetailPage() {
               height="h-[30rem]"
               zones={zones}
               selectedZoneId={selectedZoneId}
-              onSelectZone={setSelectedZoneId}
+              onSelectZone={selectZone}
+              previewPoints={previewPoints}
             />
           )
         )}
@@ -293,7 +313,7 @@ export default function TraitementDetailPage() {
               {meterAnomalies.map((a) => (
                 <button
                   key={a.id}
-                  onClick={() => setSelectedZoneId(a.id)}
+                  onClick={() => selectZone(a.id)}
                   className={clsx(
                     "flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left text-sm transition-colors hover:bg-gray-50",
                     selectedZoneId === a.id && "bg-geneva-50"
@@ -347,26 +367,30 @@ function DiagnosisPanel({
   busy,
   onValidate,
   onCorrect,
+  onPreviewChange,
 }: {
   batchId: string;
   anomaly: AnomalyOut;
   busy: boolean;
   onValidate: () => void;
   onCorrect: (method: string) => void;
+  /** Lifts the fetched preview up to the parent, which draws it on the
+   * main QualityChart inside this (selected) zone instead of a separate
+   * chart here. */
+  onPreviewChange: (points: CorrectionPreviewPoint[]) => void;
 }) {
   const resolved = anomaly.resolution !== "en_attente";
   const correctionPrimary = anomaly.recommended_action !== "valider";
 
   const [options, setOptions] = useState<CorrectionOption[]>([]);
   const [selectedMethod, setSelectedMethod] = useState<string>("");
-  const [preview, setPreview] = useState<CorrectionPreviewPoint[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadingPreview, setLoadingPreview] = useState(false);
 
   useEffect(() => {
     setOptions([]);
     setSelectedMethod("");
-    setPreview([]);
+    onPreviewChange([]);
     if (resolved || !batchId) return;
     setLoadingOptions(true);
     api
@@ -380,15 +404,22 @@ function DiagnosisPanel({
   }, [batchId, anomaly.id, resolved]);
 
   useEffect(() => {
-    setPreview([]);
+    onPreviewChange([]);
     if (!selectedMethod || !batchId || resolved) return;
     setLoadingPreview(true);
     api
       .getCorrectionPreview(batchId, anomaly.id, selectedMethod)
-      .then(setPreview)
+      .then(onPreviewChange)
       .finally(() => setLoadingPreview(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId, anomaly.id, selectedMethod, resolved]);
+
+  // Cleared whenever this panel unmounts (e.g. the zone is deselected),
+  // so the overlay never lingers on the main chart past this anomaly.
+  useEffect(() => {
+    return () => onPreviewChange([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div>
@@ -451,16 +482,11 @@ function DiagnosisPanel({
             )}
           </div>
 
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-gray-500">Aperçu du correctif avant application :</p>
-            {loadingPreview ? (
-              <p className="text-xs text-gray-400">Calcul de l'aperçu…</p>
-            ) : (
-              <div className="rounded-lg border border-gray-200 bg-white p-3">
-                <CorrectionPreviewChart points={preview} />
-              </div>
-            )}
-          </div>
+          <p className="text-xs text-gray-400">
+            {loadingPreview
+              ? "Calcul de l'aperçu…"
+              : "Aperçu du correctif : la ligne orange en tirets sur la courbe ci-dessous montre les valeurs que ce correctif écrirait dans cette zone."}
+          </p>
 
           <div className="flex gap-2">
             <button

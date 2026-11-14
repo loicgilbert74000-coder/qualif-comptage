@@ -56,6 +56,17 @@ const ZONE_COLORS: Record<ChartZone["resolution"], { fill: string; stroke: strin
   corrigee: { fill: "rgba(59,130,246,0.12)", stroke: "rgba(37,99,235,0.45)" },
 };
 
+export interface PreviewPoint {
+  timestamp: string;
+  proposed_value: number | null;
+}
+
+// Validated categorical palette, slot 2 (orange) — passes
+// scripts/validate_palette.js "#2a78d6,#eb6834" --mode light against the
+// chart's existing blue value line. Dashed stroke is the secondary
+// encoding, so the overlay stays legible without relying on color alone.
+const PREVIEW_COLOR = "#eb6834";
+
 interface Props {
   points: SeriesPoint[];
   unit: string;
@@ -66,6 +77,15 @@ interface Props {
   zones?: ChartZone[];
   selectedZoneId?: string | null;
   onSelectZone?: (id: string | null) => void;
+  /**
+   * Correction preview for the currently selected zone: the values a
+   * correctif would write, overlaid on the main chart (dashed orange)
+   * instead of a separate chart — confined to that zone's own pixel span,
+   * positioned by interpolating each point's timestamp across the zone's
+   * period rather than by array index, so it still draws even for
+   * timestamps that have no materialized Reading row (true gaps).
+   */
+  previewPoints?: PreviewPoint[];
 }
 
 export default function QualityChart({
@@ -76,6 +96,7 @@ export default function QualityChart({
   zones = [],
   selectedZoneId = null,
   onSelectZone,
+  previewPoints = [],
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -326,8 +347,12 @@ export default function QualityChart({
 
     const values = visiblePoints.map((p) => (p.quality === "manquante" || p.value === null ? NaN : p.value));
     const finite = values.filter((v): v is number => Number.isFinite(v));
-    let yMin = finite.length ? Math.min(...finite) : 0;
-    let yMax = finite.length ? Math.max(...finite) : 1;
+    const previewFinite = previewPoints
+      .map((p) => p.proposed_value)
+      .filter((v): v is number => v !== null && Number.isFinite(v));
+    const allFinite = finite.concat(previewFinite);
+    let yMin = allFinite.length ? Math.min(...allFinite) : 0;
+    let yMax = allFinite.length ? Math.max(...allFinite) : 1;
     if (yMin === yMax) {
       yMin -= 1;
       yMax += 1;
@@ -446,6 +471,55 @@ export default function QualityChart({
       ctx.stroke();
     }
 
+    // Correction-preview overlay: dashed orange line + markers, confined
+    // to the selected zone's own pixel span. Positioned by each point's
+    // relative timestamp within the zone's period rather than by array
+    // index, so it still draws for timestamps absent from `points` (a
+    // true gap that was never materialized as a Reading row).
+    if (previewPoints.length > 0 && selectedZoneId) {
+      const zonePx = zonesPxRef.current.find((z) => z.id === selectedZoneId);
+      const zoneMeta = zones.find((z) => z.id === selectedZoneId);
+      if (zonePx && zoneMeta) {
+        const zoneStartMs = +new Date(zoneMeta.period_start);
+        const zoneEndMs = +new Date(zoneMeta.period_end);
+        const spanMs = zoneEndMs - zoneStartMs || 1;
+        const xAtPreview = (ts: string) => {
+          const frac = Math.min(1, Math.max(0, (+new Date(ts) - zoneStartMs) / spanMs));
+          return zonePx.x1 + frac * (zonePx.x2 - zonePx.x1);
+        };
+        ctx.strokeStyle = PREVIEW_COLOR;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 3]);
+        ctx.beginPath();
+        let drawingPreview = false;
+        for (const p of previewPoints) {
+          if (p.proposed_value === null) {
+            drawingPreview = false;
+            continue;
+          }
+          const x = xAtPreview(p.timestamp);
+          const y = yAt(p.proposed_value);
+          if (!drawingPreview) {
+            ctx.moveTo(x, y);
+            drawingPreview = true;
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        for (const p of previewPoints) {
+          if (p.proposed_value === null) continue;
+          const x = xAtPreview(p.timestamp);
+          const y = yAt(p.proposed_value);
+          ctx.beginPath();
+          ctx.arc(x, y, 3, 0, Math.PI * 2);
+          ctx.fillStyle = PREVIEW_COLOR;
+          ctx.fill();
+        }
+      }
+    }
+
     // x-axis tick labels, spaced so they don't overlap
     ctx.fillStyle = "#6b7280";
     ctx.textAlign = "center";
@@ -488,7 +562,7 @@ export default function QualityChart({
     ro.observe(wrap);
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visiblePoints, unit, granularity, hover, zoneIndexRanges, selectedZoneId, start]);
+  }, [visiblePoints, unit, granularity, hover, zoneIndexRanges, selectedZoneId, start, previewPoints, zones]);
 
   const hoverTooltip = useMemo(() => {
     if (!hover) return null;
@@ -573,6 +647,14 @@ export default function QualityChart({
               <span className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-blue-500 bg-blue-500/10" /> Corrigée
             </span>
           </>
+        )}
+        {previewPoints.length > 0 && (
+          <span className="flex items-center gap-1.5">
+            <svg width="16" height="8" aria-hidden>
+              <line x1="0" y1="4" x2="16" y2="4" stroke={PREVIEW_COLOR} strokeWidth="2" strokeDasharray="5 3" />
+            </svg>
+            Proposition du correctif sélectionné
+          </span>
         )}
       </div>
     </div>
