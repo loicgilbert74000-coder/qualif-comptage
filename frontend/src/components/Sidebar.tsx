@@ -29,7 +29,7 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col bg-sidebar text-slate-300">
+    <aside className="flex h-full w-64 shrink-0 flex-col overflow-y-auto bg-sidebar text-slate-300">
       <div className="flex items-center px-5 py-5">
         <img
           src="/geneva-logo.png"
@@ -38,7 +38,7 @@ export default function Sidebar() {
         />
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-2">
+      <nav className="space-y-1 px-3 py-2">
         {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
