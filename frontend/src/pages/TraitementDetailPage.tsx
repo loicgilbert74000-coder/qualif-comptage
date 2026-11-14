@@ -31,6 +31,7 @@ export default function TraitementDetailPage() {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // `resolve:<id>` | "finalize"
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   async function refresh() {
     if (!batchId) return;
@@ -41,7 +42,8 @@ export default function TraitementDetailPage() {
   }
 
   useEffect(() => {
-    refresh();
+    setLoadError(null);
+    refresh().catch((e) => setLoadError((e as Error).message || "Le chargement du dossier a échoué."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId]);
 
@@ -50,6 +52,8 @@ export default function TraitementDetailPage() {
     setLoadingSeries(true);
     try {
       setSeries(await api.getSeries(batchId, selectedMeterId));
+    } catch (e) {
+      setLoadError((e as Error).message || "Le chargement de la courbe a échoué.");
     } finally {
       setLoadingSeries(false);
     }
@@ -69,6 +73,17 @@ export default function TraitementDetailPage() {
 
   const pendingCount = anomalies.filter((a) => a.resolution === "en_attente").length;
   const allResolved = pendingCount === 0;
+
+  const pendingByMeter = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const a of anomalies) {
+      if (a.resolution !== "en_attente") continue;
+      counts.set(a.meter_id, (counts.get(a.meter_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [anomalies]);
+
+  const metersWithPending = (detail?.meters ?? []).filter((m) => (pendingByMeter.get(m.meter_id) ?? 0) > 0);
 
   const zones: ChartZone[] = meterAnomalies.map((a) => ({
     id: a.id,
@@ -107,7 +122,26 @@ export default function TraitementDetailPage() {
   }
 
   if (!detail) {
-    return <div className="flex h-full flex-1 items-center justify-center text-sm text-gray-400">Chargement…</div>;
+    return (
+      <div className="flex h-full flex-1 flex-col items-center justify-center gap-3 text-sm text-gray-400">
+        {loadError ? (
+          <>
+            <p className="max-w-md text-center text-red-600">{loadError}</p>
+            <button
+              onClick={() => {
+                setLoadError(null);
+                refresh().catch((e) => setLoadError((e as Error).message || "Le chargement du dossier a échoué."));
+              }}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Réessayer
+            </button>
+          </>
+        ) : (
+          "Chargement…"
+        )}
+      </div>
+    );
   }
 
   const { summary, meters } = detail;
@@ -137,17 +171,45 @@ export default function TraitementDetailPage() {
                 setSelectedZoneId(null);
               }}
             >
-              {meters.map((m) => (
-                <option key={m.meter_id} value={m.meter_id}>
-                  {m.meter_code} ({m.fluid_type} · {m.role})
-                </option>
-              ))}
+              {meters.map((m) => {
+                const n = pendingByMeter.get(m.meter_id) ?? 0;
+                return (
+                  <option key={m.meter_id} value={m.meter_id}>
+                    {m.meter_code} ({m.fluid_type} · {m.role}){n > 0 ? ` — ${n} à traiter` : ""}
+                  </option>
+                );
+              })}
             </select>
           </label>
           <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
             {anomalies.length - pendingCount} / {anomalies.length} zone(s) traitée(s) pour ce dossier
           </span>
         </div>
+
+        {!allResolved && metersWithPending.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <span className="font-medium">
+              {meterAnomalies.length === 0 && selectedMeterId
+                ? "Ce compteur n'a plus de zone à traiter — il reste des zones sur :"
+                : "Compteurs avec des zones encore à traiter :"}
+            </span>
+            {metersWithPending.map((m) => (
+              <button
+                key={m.meter_id}
+                onClick={() => {
+                  setSelectedMeterId(m.meter_id);
+                  setSelectedZoneId(null);
+                }}
+                className={clsx(
+                  "rounded-full border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100",
+                  m.meter_id === selectedMeterId && "bg-amber-100"
+                )}
+              >
+                {m.meter_code} ({pendingByMeter.get(m.meter_id)})
+              </button>
+            ))}
+          </div>
+        )}
 
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
