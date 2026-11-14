@@ -52,32 +52,26 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   const ic = {};
   for (const n of ["FaClock", "FaBolt", "FaArrowDown", "FaLock", "FaFileUpload", "FaSearch", "FaMagic", "FaHistory", "FaCheck", "FaTimes", "FaCodeBranch", "FaGlobe", "FaBalanceScale"]) ic[n] = await icon(n);
 
-  pres.addSection({ title: "Ouverture" });
-  // 1 — Titre
-  let s = pres.addSlide({ masterName: "DARK", sectionTitle: "Ouverture" });
-  s.addText("Qualif-Comptage", { placeholder: "title", align: "left", valign: "top" });
-  s.addText("Des compteurs qui mentent : on les repère, on les corrige, on garde la trace.", { x: 0.6, y: 2.95, w: 7.6, h: 0.9, fontFace: "Calibri", fontSize: 22, italic: true, color: C.accent6, margin: 0, isTextBox: true, objectName: "Accroche" });
-  s.addText("Énerg-IACK 2026 · [Nom de l'équipe] · [Défi n° — titre]", { x: 0.6, y: 4.85, w: 8.8, h: 0.35, fontFace: "Calibri", fontSize: 14, color: "B8C2D6", margin: 0, isTextBox: true, objectName: "Équipe et défi" });
-  s.addText("Qualif-Comptage", { x: 0.6, y: 0.5, w: 4, h: 0.3, fontFace: "Calibri", fontSize: 12, color: "B8C2D6", charSpacing: 3, margin: 0, isTextBox: true, objectName: "Sur-titre", transparency: 100 });
-
-  // 2 — Problème
-  pres.addSection({ title: "Problème" });
-  s = pres.addSlide({ masterName: "LIGHT", sectionTitle: "Problème" });
-  s.addText("Sans données fiables, pas de sortie du fossile pilotable", { placeholder: "title", align: "left", valign: "top", fontSize: 26 });
+  pres.addSection({ title: "Ouverture et problème" });
+  // 1 — Titre + problème
+  let s = pres.addSlide({ masterName: "DARK", sectionTitle: "Ouverture et problème" });
+  s.addText("Qualif-Comptage", { x: 0.6, y: 0.4, w: 8.8, h: 0.8, fontFace: "Cambria", fontSize: 40, bold: true, color: C.background1, align: "left", valign: "top", margin: 0, isTextBox: true, objectName: "Titre" });
+  s.addText("Sans données de comptage fiables, pas de sortie du fossile pilotable.", { x: 0.6, y: 1.2, w: 8.8, h: 0.45, fontFace: "Calibri", fontSize: 20, italic: true, color: C.accent6, margin: 0, isTextBox: true, objectName: "Accroche" });
   const faults = [
     ["FaClock", "Trous", "Relevés absents pendant des heures ou des jours"],
-    ["FaBolt", "Pics et valeurs négatives", "Un zéro en trop, une virgule décalée"],
+    ["FaBolt", "Pics et négatifs", "Un zéro en trop, une virgule décalée"],
     ["FaArrowDown", "Index qui baisse", "Remplacement de compteur, ou erreur de saisie ?"],
     ["FaLock", "Compteur bloqué", "Une valeur figée en pleine saison de chauffe"],
   ];
   faults.forEach((f, i) => {
-    const x = 0.6 + i * 2.25, y = 1.55;
-    s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.05, h: 2.45, rectRadius: 0.08, fill: { color: C.background2 }, line: { color: C.background2 }, objectName: `Carte ${f[1]}` });
-    circleIcon(s, ic[f[0]], x + 0.2, y + 0.2, 0.62, C.accent3, `Icône ${f[1]}`);
-    s.addText(f[1], { x: x + 0.2, y: y + 0.95, w: 1.7, h: 0.55, fontFace: "Calibri", fontSize: 16, bold: true, color: C.text1, margin: 0, valign: "top", isTextBox: true });
-    s.addText(f[2], { x: x + 0.2, y: y + 1.5, w: 1.7, h: 0.8, fontFace: "Calibri", fontSize: 14, color: C.accent5, margin: 0, valign: "top", isTextBox: true });
+    const x = 0.6 + i * 2.25, y = 1.95;
+    s.addShape(pres.ShapeType.roundRect, { x, y, w: 2.05, h: 2.1, rectRadius: 0.08, fill: { color: C.text1 }, line: { color: C.text1 }, objectName: `Carte ${f[1]}` });
+    circleIcon(s, ic[f[0]], x + 0.2, y + 0.18, 0.55, C.accent3, `Icône ${f[1]}`);
+    s.addText(f[1], { x: x + 0.2, y: y + 0.85, w: 1.7, h: 0.5, fontFace: "Calibri", fontSize: 16, bold: true, color: C.background1, margin: 0, valign: "top", isTextBox: true });
+    s.addText(f[2], { x: x + 0.2, y: y + 1.3, w: 1.7, h: 0.7, fontFace: "Calibri", fontSize: 14, color: "D5DCEA", margin: 0, valign: "top", isTextBox: true });
   });
-  s.addText("Aujourd'hui : repérage et correction à la main, compteur par compteur, sans trace.", { x: 0.6, y: 4.35, w: 8.8, h: 0.5, fontFace: "Calibri", fontSize: 18, bold: true, color: C.text1, margin: 0, isTextBox: true, objectName: "Constat" });
+  s.addText("Aujourd'hui : correction à la main, compteur par compteur, sans trace.", { x: 0.6, y: 4.25, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 18, bold: true, color: C.background1, margin: 0, isTextBox: true, objectName: "Constat" });
+  s.addText("Énerg-IACK 2026 · Défi 3 : L'IA gardienne de la donnée · Saleh Bauch, Stéphane Bernardini, Loïc Gilbert, Sébastien Lavaud", { x: 0.6, y: 4.85, w: 8.8, h: 0.5, fontFace: "Calibri", fontSize: 12, color: "B8C2D6", margin: 0, isTextBox: true, objectName: "Équipe et défi" });
 
   // 3 — Solution
   pres.addSection({ title: "Solution" });
