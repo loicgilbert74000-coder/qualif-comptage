@@ -35,7 +35,7 @@ pres.defineSlideMaster({
 pres.defineSlideMaster({
   title: "LIGHT", background: { color: HEX.white },
   slideNumber: { x: 9.2, y: 5.2, w: 0.5, h: 0.3, fontFace: "Calibri", fontSize: 10, color: C.accent5 },
-  objects: [{ placeholder: { options: { name: "title", type: "title", x: 0.6, y: 0.35, w: 8.8, h: 0.8, fontFace: "Cambria", fontSize: 32, bold: true, color: C.text1, valign: "top", margin: 0 }, text: "" } }],
+  objects: [{ placeholder: { options: { name: "title", type: "title", x: 0.6, y: 0.58, w: 8.8, h: 0.65, fontFace: "Cambria", fontSize: 32, bold: true, color: C.text1, valign: "top", margin: 0 }, text: "" } }],
 });
 
 async function icon(name, color = "#FFFFFF") {
@@ -63,7 +63,7 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   // ───────────── 1 — Accroche + problème
   pres.addSection({ title: "Problème" });
   let s = pres.addSlide({ masterName: "DARK", sectionTitle: "Problème" });
-  s.addText("ÉNERG-IACK 2026 · DÉFI 3", { x: 0.6, y: 0.4, w: 5, h: 0.3, fontFace: "Calibri", fontSize: 12, bold: true, color: C.accent6, charSpacing: 3, margin: 0, isTextBox: true, objectName: "Sur-titre" });
+  s.addText("1 · LE PROBLÈME", { x: 0.6, y: 0.4, w: 5, h: 0.3, fontFace: "Calibri", fontSize: 12, bold: true, color: C.accent6, charSpacing: 3, margin: 0, isTextBox: true, objectName: "Sur-titre" });
   s.addText("Qualif-Comptage", { x: 0.6, y: 0.75, w: 4.4, h: 0.75, fontFace: "Cambria", fontSize: 38, bold: true, color: C.background1, valign: "top", margin: 0, isTextBox: true, objectName: "Titre" });
   s.addText("Un compteur qui ment fausse toutes les décisions.", { x: 0.6, y: 1.55, w: 4.1, h: 0.95, fontFace: "Calibri", fontSize: 22, italic: true, color: C.accent6, valign: "top", margin: 0, isTextBox: true, objectName: "Accroche" });
   const faults = [["FaClock", "Trous de relevé"], ["FaBolt", "Pics et valeurs négatives"], ["FaArrowDown", "Index qui baisse"], ["FaLock", "Compteur bloqué"]];
@@ -83,29 +83,37 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   s.addText("Aujourd'hui : repérage et correction à la main, sans trace.", { x: 0.6, y: 4.8, w: 8.8, h: 0.35, fontFace: "Calibri", fontSize: 18, bold: true, color: C.background1, margin: 0, isTextBox: true, objectName: "Constat" });
   s.addText("Saleh Bauch · Stéphane Bernardini · Loïc Gilbert · Sébastien Lavaud — Défi 3 : L'IA gardienne de la donnée", { x: 0.6, y: 5.2, w: 8.8, h: 0.3, fontFace: "Calibri", fontSize: 12, color: SOFT, margin: 0, isTextBox: true, objectName: "Équipe et défi" });
 
-  // ───────────── 2 — Solution (capture réelle)
+  // ───────────── 2 — Solution (capture réelle numérotée)
   pres.addSection({ title: "Solution" });
   s = pres.addSlide({ masterName: "LIGHT", sectionTitle: "Solution" });
+  s.addText("2 · LA SOLUTION", { x: 0.6, y: 0.28, w: 8.8, h: 0.26, fontFace: "Calibri", fontSize: 13, bold: true, color: AMBER_TXT, charSpacing: 3, margin: 0, isTextBox: true, objectName: "Repère de section" });
   s.addText("L'outil propose, la personne décide", { placeholder: "title", align: "left", valign: "top" });
-  const steps = [
-    ["FaFileUpload", "Importer", "CSV de tout fluide"],
-    ["FaSearch", "Qualifier", "Score et zones à traiter"],
-    ["FaMagic", "Corriger", "Plusieurs correctifs au choix"],
-    ["FaHistory", "Tracer", "Chaque décision enregistrée"],
+  s.addText("On importe un CSV de n'importe quel fluide ; l'outil qualifie, propose une correction, puis garde la trace.", { x: 0.6, y: 1.3, w: 8.8, h: 0.55, fontFace: "Calibri", fontSize: 16, color: INK, margin: 0, valign: "top", isTextBox: true, objectName: "Chapeau" });
+  const IMG_X = 4.75, IMG_Y = 2.0, IMG_W = 4.75, IMG_H = 4.75 * 732 / 1276;
+  s.addShape(pres.ShapeType.roundRect, { x: IMG_X - 0.1, y: IMG_Y - 0.1, w: IMG_W + 0.2, h: IMG_H + 0.2, rectRadius: 0.08, fill: { color: "FFFFFF" }, line: { color: "CBD5E1", width: 1 }, shadow: { type: "outer", color: "000000", opacity: 0.18, blur: 8, offset: 3, angle: 90 }, objectName: "Cadre capture" });
+  s.addImage({ path: path.join(__dirname, "capture-diagnostic.png"), x: IMG_X, y: IMG_Y, w: IMG_W, h: IMG_H, altText: "Capture de l'application : zone Absence de relevé de 8 heures, diagnostic proposé, choix du correctif (profil type, interpolation linéaire, report), boutons Appliquer ou Valider en l'état", objectName: "Capture application" });
+  s.addText("Capture réelle de l'application (données simulées)", { x: IMG_X - 0.1, y: IMG_Y + IMG_H + 0.18, w: 5.0, h: 0.28, fontFace: "Calibri", fontSize: 12, italic: true, color: "475569", margin: 0, isTextBox: true, objectName: "Légende capture" });
+  const marks = [
+    ["Le diagnostic", "L'outil explique la panne probable et propose un correctif.", 0.30],
+    ["Le choix", "Profil type, interpolation ou report : la personne choisit.", 0.60],
+    ["La décision", "Appliquer ou valider en l'état : tout est enregistré.", 0.93],
   ];
-  steps.forEach((st, i) => {
-    const y = 1.4 + i * 0.95;
-    circleIcon(s, ic[st[0]], 0.6, y + 0.05, 0.6, i === 2 ? "C2620A" : "0B6B5F", `Étape ${st[1]}`);
-    s.addText(`${i + 1}. ${st[1]}`, { x: 1.4, y, w: 2.7, h: 0.35, fontFace: "Cambria", fontSize: 20, bold: true, color: INK, margin: 0, valign: "top", isTextBox: true });
-    s.addText(st[2], { x: 1.4, y: y + 0.36, w: 2.7, h: 0.5, fontFace: "Calibri", fontSize: 16, color: INK, margin: 0, valign: "top", isTextBox: true });
+  marks.forEach((m, i) => {
+    const y = 2.0 + i * 0.95;
+    s.addShape(pres.ShapeType.ellipse, { x: 0.6, y, w: 0.42, h: 0.42, fill: { color: "F5A524" }, line: { color: "F5A524" }, objectName: `Pastille ${i + 1}` });
+    s.addText(String(i + 1), { x: 0.6, y, w: 0.42, h: 0.42, fontFace: "Calibri", fontSize: 18, bold: true, color: "0B1426", align: "center", valign: "middle", margin: 0, isTextBox: true });
+    s.addText(m[0], { x: 1.2, y: y - 0.04, w: 3.0, h: 0.34, fontFace: "Cambria", fontSize: 20, bold: true, color: INK, margin: 0, valign: "top", isTextBox: true });
+    s.addText(m[1], { x: 1.2, y: y + 0.32, w: 3.0, h: 0.6, fontFace: "Calibri", fontSize: 16, color: INK, margin: 0, valign: "top", isTextBox: true });
+    // pastille correspondante, sur la capture
+    const py = IMG_Y + IMG_H * m[2] - 0.17;
+    s.addShape(pres.ShapeType.ellipse, { x: IMG_X - 0.4, y: py, w: 0.34, h: 0.34, fill: { color: "F5A524" }, line: { color: "FFFFFF", width: 1.5 }, objectName: `Repère capture ${i + 1}` });
+    s.addText(String(i + 1), { x: IMG_X - 0.4, y: py, w: 0.34, h: 0.34, fontFace: "Calibri", fontSize: 14, bold: true, color: "0B1426", align: "center", valign: "middle", margin: 0, isTextBox: true });
   });
-  s.addShape(pres.ShapeType.roundRect, { x: 4.3, y: 1.3, w: 5.2, h: 3.2, rectRadius: 0.1, fill: { color: "FFFFFF" }, line: { color: "CBD5E1", width: 1 }, shadow: { type: "outer", color: "000000", opacity: 0.18, blur: 8, offset: 3, angle: 90 }, objectName: "Cadre capture" });
-  s.addImage({ path: path.join(__dirname, "capture-diagnostic.png"), x: 4.45, y: 1.45, w: 4.9, h: 4.9 * 732 / 1276, altText: "Capture de l'application : zone Absence de relevé de 8 heures, diagnostic proposé, choix du correctif (profil type, interpolation linéaire, report)", objectName: "Capture application" });
-  s.addText("Capture réelle de l'application (données simulées)", { x: 4.3, y: 4.62, w: 5.2, h: 0.3, fontFace: "Calibri", fontSize: 12, italic: true, color: "475569", margin: 0, isTextBox: true, objectName: "Légende capture" });
 
   // ───────────── 3 — Preuve
   pres.addSection({ title: "Preuve" });
   s = pres.addSlide({ masterName: "LIGHT", sectionTitle: "Preuve" });
+  s.addText("3 · LA PREUVE", { x: 0.6, y: 0.28, w: 8.8, h: 0.26, fontFace: "Calibri", fontSize: 13, bold: true, color: AMBER_TXT, charSpacing: 3, margin: 0, isTextBox: true, objectName: "Repère de section" });
   s.addText("Preuve : 8 h de gaz reconstruites", { placeholder: "title", align: "left", valign: "top" });
   const labels = lab(sim.labels, 12), raw = sim.raw, rec = sim.rec, truth = sim.truth_gap;
   const gapIdx = raw.map((v, i) => (v === null ? i : -1)).filter((i) => i >= 0);
@@ -136,6 +144,7 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   // ───────────── 4 — Le défi, point par point
   pres.addSection({ title: "Le défi point par point" });
   s = pres.addSlide({ masterName: "LIGHT", sectionTitle: "Le défi point par point" });
+  s.addText("4 · OÙ EN EST-ON ?", { x: 0.6, y: 0.28, w: 8.8, h: 0.26, fontFace: "Calibri", fontSize: 13, bold: true, color: AMBER_TXT, charSpacing: 3, margin: 0, isTextBox: true, objectName: "Repère de section" });
   s.addText("Le défi 3, point par point", { placeholder: "title", align: "left", valign: "top" });
   const rows = [
     ["Couvert", "0B6B5F", "Détecter les anomalies", "10 types · 50/50 anomalies injectées détectées (benchmark de l'audit)"],
@@ -152,29 +161,28 @@ function circleIcon(slide, img, x, y, d, fill, name) {
   });
   s.addText("Pas d'apprentissage : le diagnostic « IA » repose sur des règles. Défauts connus (audit) : import sur valeur vide, faux positifs en horaire.", { x: 0.6, y: 4.7, w: 8.4, h: 0.65, fontFace: "Calibri", fontSize: 16, italic: true, color: INK, margin: 0, valign: "top", isTextBox: true, objectName: "Défauts connus" });
 
-  // ───────────── 5 — Impact, reprise, suite
+  // ───────────── 5 — Impact, reprise, suite (clair, sans bloc décoratif)
   pres.addSection({ title: "Impact et suite" });
-  s = pres.addSlide({ masterName: "DARK", sectionTitle: "Impact et suite" });
-  s.addText("Des décisions fondées sur des données saines", { x: 0.6, y: 0.4, w: 8.8, h: 0.7, fontFace: "Cambria", fontSize: 30, bold: true, color: C.background1, align: "left", valign: "top", margin: 0, isTextBox: true, objectName: "Titre" });
-  s.addShape(pres.ShapeType.roundRect, { x: 0.6, y: 1.15, w: 8.8, h: 1.15, rectRadius: 0.08, fill: { color: "F5A524" }, line: { color: "F5A524" }, objectName: "Bandeau impact" });
-  s.addText("≈ 750 h / an", { x: 0.8, y: 1.15, w: 3.2, h: 1.15, fontFace: "Cambria", fontSize: 36, bold: true, color: "0B1426", margin: 0, valign: "middle", isTextBox: true, objectName: "Chiffre impact" });
-  s.addText("de correction manuelle évitées pour 1 000 compteurs. Hypothèses : 5 zones par compteur et par an, 10 min à la main contre 1 min avec l'outil.", { x: 4.1, y: 1.15, w: 5.15, h: 1.15, fontFace: "Calibri", fontSize: 16, color: "0B1426", margin: 0, valign: "middle", isTextBox: true, objectName: "Hypothèses impact" });
-  const cards = [
-    ["FaBalanceScale", "Pour la Ville", "Moins de nettoyage, des données fiables"],
-    ["FaGlobe", "Transposable", "Aucun fluide codé en dur"],
-    ["FaCodeBranch", "Reprenable", "Code ouvert (MIT), Docker ou exécutable"],
+  s = pres.addSlide({ masterName: "LIGHT", sectionTitle: "Impact et suite" });
+  s.addText("5 · IMPACT ET SUITE", { x: 0.6, y: 0.28, w: 8.8, h: 0.26, fontFace: "Calibri", fontSize: 13, bold: true, color: AMBER_TXT, charSpacing: 3, margin: 0, isTextBox: true, objectName: "Repère de section" });
+  s.addText("Ce que ça change, et la suite", { placeholder: "title", align: "left", valign: "top" });
+  const head = (txt, x, w) => s.addText(txt, { x, y: 1.4, w, h: 0.3, fontFace: "Calibri", fontSize: 13, bold: true, color: AMBER_TXT, charSpacing: 2, margin: 0, isTextBox: true, objectName: `Rubrique ${txt}` });
+  head("CE QUE ÇA CHANGE", 0.6, 3.0);
+  s.addShape(pres.ShapeType.roundRect, { x: 0.6, y: 1.8, w: 3.0, h: 3.0, rectRadius: 0.08, fill: { color: "FFF3DC" }, line: { color: "F5A524", width: 1.5 }, objectName: "Carte impact" });
+  s.addText("≈ 750 h par an", { x: 0.8, y: 1.95, w: 2.65, h: 0.6, fontFace: "Cambria", fontSize: 28, bold: true, color: AMBER_TXT, margin: 0, valign: "top", isTextBox: true, objectName: "Chiffre impact" });
+  s.addText("de correction manuelle évitées", { x: 0.8, y: 2.6, w: 2.65, h: 0.65, fontFace: "Calibri", fontSize: 18, bold: true, color: INK, margin: 0, valign: "top", isTextBox: true });
+  s.addText("Estimation pour 1 000 compteurs : 5 zones à traiter par compteur et par an, 10 min à la main contre 1 min avec l'outil.", { x: 0.8, y: 3.35, w: 2.65, h: 1.3, fontFace: "Calibri", fontSize: 14, color: INK, margin: 0, valign: "top", isTextBox: true, objectName: "Hypothèses impact" });
+  head("POUR LA VILLE", 3.95, 3.4);
+  const pts = [
+    ["Reprenable : ", "code ouvert (licence MIT), exécutable sans installation ou Docker."],
+    ["Transposable : ", "aucun fluide codé en dur, donc d'autres services et d'autres communes."],
+    ["Suite : ", "statuts « mesuré / estimé / hypothèse », trace par point, veille continue."],
   ];
-  cards.forEach((cd, i) => {
-    const x = 0.6 + i * 2.15;
-    s.addShape(pres.ShapeType.roundRect, { x, y: 2.5, w: 2.0, h: 2.3, rectRadius: 0.08, fill: { color: PANEL }, line: { color: PANEL }, objectName: `Carte ${cd[1]}` });
-    circleIcon(s, ic[cd[0]], x + 0.2, 2.65, 0.55, "F5A524", `Icône ${cd[1]}`);
-    s.addText(cd[1], { x: x + 0.2, y: 3.3, w: 1.65, h: 0.4, fontFace: "Cambria", fontSize: 18, bold: true, color: C.background1, margin: 0, isTextBox: true });
-    s.addText(cd[2], { x: x + 0.2, y: 3.75, w: 1.65, h: 1.0, fontFace: "Calibri", fontSize: 16, color: C.background1, margin: 0, valign: "top", isTextBox: true });
-  });
-  s.addShape(pres.ShapeType.roundRect, { x: 7.05, y: 2.5, w: 2.35, h: 2.3, rectRadius: 0.08, fill: { color: "FFFFFF" }, line: { color: "FFFFFF" }, objectName: "Carte QR" });
-  s.addImage({ path: path.join(__dirname, "qr-depot.png"), x: 7.4, y: 2.6, w: 1.65, h: 1.65, altText: "QR code vers le dépôt GitHub loicgilbert74000-coder/qualif-comptage", objectName: "QR code dépôt" });
-  s.addText("Code source : scannez", { x: 7.1, y: 4.3, w: 2.25, h: 0.4, fontFace: "Calibri", fontSize: 14, bold: true, color: "0B1426", align: "center", margin: 0, isTextBox: true, objectName: "Légende QR" });
-  s.addText("Suite : statuts « mesuré / estimé / hypothèse », trace par point, veille continue.", { x: 0.6, y: 4.95, w: 8.8, h: 0.4, fontFace: "Calibri", fontSize: 16, italic: true, color: C.accent6, margin: 0, isTextBox: true, objectName: "Suite" });
+  s.addText(pts.map((p, i) => [{ text: p[0], options: { bold: true, breakLine: false } }, { text: p[1], options: { breakLine: i < pts.length - 1 } }]).flat(), { x: 3.95, y: 1.8, w: 3.4, h: 3.0, fontFace: "Calibri", fontSize: 16, color: INK, margin: 0, valign: "top", paraSpaceAfter: 12, isTextBox: true, objectName: "Pour la Ville" });
+  head("CODE SOURCE", 7.7, 1.8);
+  s.addShape(pres.ShapeType.roundRect, { x: 7.7, y: 1.8, w: 1.8, h: 2.35, rectRadius: 0.08, fill: { color: "FFFFFF" }, line: { color: "CBD5E1", width: 1 }, objectName: "Carte QR" });
+  s.addImage({ path: path.join(__dirname, "qr-depot.png"), x: 7.8, y: 1.9, w: 1.6, h: 1.6, altText: "QR code vers le dépôt GitHub loicgilbert74000-coder/qualif-comptage", objectName: "QR code dépôt" });
+  s.addText("Scannez : le dépôt est public", { x: 7.75, y: 3.55, w: 1.7, h: 0.55, fontFace: "Calibri", fontSize: 13, bold: true, color: INK, align: "center", valign: "top", margin: 0, isTextBox: true, objectName: "Légende QR" });
 
   // Notes (≈ 3 min, ~430 mots)
   const N = fs.readFileSync(path.join(__dirname, "notes.json"), "utf8");
