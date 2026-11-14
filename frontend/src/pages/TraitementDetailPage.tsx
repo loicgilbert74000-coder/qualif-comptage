@@ -200,7 +200,7 @@ export default function TraitementDetailPage() {
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-y-auto">
-      {busy === "finalize" && <LoadingOverlay label="Enregistrement de la courbe en base de données…" />}
+      {busy === "finalize" && <LoadingOverlay label="Qualification du compteur en cours…" />}
 
       <TopBar
         title={summary.name}
@@ -229,7 +229,7 @@ export default function TraitementDetailPage() {
                 return (
                   <option key={m.meter_id} value={m.meter_id}>
                     {m.meter_code} ({m.fluid_type} · {m.role})
-                    {m.saved ? " — enregistré" : n > 0 ? ` — ${n} à traiter` : ""}
+                    {m.saved ? " — qualifié" : n > 0 ? ` — ${n} à traiter` : ""}
                   </option>
                 );
               })}
@@ -239,7 +239,7 @@ export default function TraitementDetailPage() {
             {anomalies.length - pendingCount} / {anomalies.length} zone(s) traitée(s) pour ce dossier
           </span>
           <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
-            {savedMeterCount} / {totalMeterCount} compteur(s) enregistré(s)
+            {savedMeterCount} / {totalMeterCount} compteur(s) qualifié(s)
           </span>
         </div>
 
@@ -342,17 +342,17 @@ export default function TraitementDetailPage() {
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <p className="text-sm text-gray-500">
             {meterSaved
-              ? "La courbe de ce compteur a déjà été enregistrée en base de données."
+              ? "Ce compteur a déjà été qualifié."
               : meterResolved
-              ? "Toutes les zones de ce compteur ont été validées ou corrigées : sa courbe peut être enregistrée dès maintenant, sans attendre les autres compteurs du dossier."
-              : `${meterPendingCount} zone(s) de ce compteur encore à traiter avant de pouvoir l'enregistrer.`}
+              ? "Toutes les zones de ce compteur ont été validées ou corrigées : il peut être qualifié dès maintenant, sans attendre les autres compteurs du dossier."
+              : `${meterPendingCount} zone(s) de ce compteur encore à traiter avant de pouvoir le qualifier.`}
           </p>
           <button
             onClick={saveMeter}
             disabled={!meterResolved || meterSaved || busy === "finalize"}
             className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
           >
-            {busy === "finalize" ? "…" : meterSaved ? "Compteur déjà enregistré" : "Enregistrer la courbe de ce compteur"}
+            {busy === "finalize" ? "…" : meterSaved ? "Compteur déjà qualifié" : "Qualifier ce compteur"}
           </button>
         </section>
 

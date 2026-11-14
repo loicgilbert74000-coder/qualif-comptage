@@ -10,6 +10,7 @@ import QualityCriteriaDialog from "./QualityCriteriaDialog";
 const NAV_ITEMS = [
   { to: "/", label: "Qualification des données", icon: IconChart },
   { to: "/historique", label: "Historique des traitements", icon: IconClock },
+  { to: "/exports", label: "Gestion des exports", icon: IconDownload },
   { to: "/batiments", label: "Bâtiments & compteurs", icon: IconBuilding },
   { to: "/parametres", label: "Types d'erreurs", icon: IconSearch },
 ];
@@ -117,6 +118,15 @@ function IconSearch({ className }: { className?: string }) {
       <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.8" />
       <path d="M19.5 19.5 15 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path d="M10.5 7.5v2M9.5 10.5h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+function IconDownload({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className}>
+      <path d="M12 4v11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M7.5 11 12 15.5 16.5 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 18.5h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
