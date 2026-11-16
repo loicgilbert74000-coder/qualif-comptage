@@ -80,6 +80,18 @@ def on_startup():
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE import_batches ADD COLUMN content_hash VARCHAR(64)"))
 
+    meter_columns = {column["name"] for column in inspect(engine).get_columns("meters")}
+    if "status" not in meter_columns:
+        with engine.begin() as connection:
+            # Same Enum()-stores-the-NAME convention as "anomalies.resolution"
+            # above: the default must be "A_VALIDER", not "a_valider".
+            connection.execute(text(
+                "ALTER TABLE meters ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'A_VALIDER'"
+            ))
+    if "quality_score" not in meter_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE meters ADD COLUMN quality_score FLOAT"))
+
 
 app.include_router(imports.router)
 app.include_router(buildings.router)

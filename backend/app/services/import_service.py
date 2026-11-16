@@ -14,6 +14,7 @@ from app.config import settings as app_settings
 from app.models import (
     Building,
     Meter,
+    MeterStatus,
     ImportBatch,
     ImportKind,
     ImportStatus,
@@ -608,6 +609,13 @@ def validate_meter(db: Session, batch: ImportBatch, meter_id: uuid.UUID) -> dict
     existing.quality_before = quality_before
     existing.quality_after = quality_after
 
+    meter.quality_score = quality_after
+    meter.status = (
+        MeterStatus.CORRIGE
+        if (result.n_missing_filled or result.n_incoherence_smoothed)
+        else MeterStatus.VALIDE
+    )
+
     db.add(
         ProcessingHistory(
             import_batch_id=batch.id,
@@ -917,8 +925,17 @@ def reject_batch(db: Session, batch: ImportBatch) -> ImportBatch:
     batch.status = ImportStatus.REFUSE
     # A refused file's quality/reliability index is no longer meaningful —
     # clear it so the stored record itself reflects "non valide" rather
-    # than leaving a stale percentage from before the refusal.
+    # than leaving a stale percentage from before the refusal. Same for
+    # every meter this batch fed: their overall status now reflects that
+    # this data isn't usable, regardless of what an earlier batch said.
     batch.quality_score = None
+    meter_ids = {
+        row[0] for row in db.query(Reading.meter_id).filter(Reading.import_batch_id == batch.id).distinct()
+    }
+    if meter_ids:
+        db.query(Meter).filter(Meter.id.in_(meter_ids)).update(
+            {Meter.status: MeterStatus.INVALIDE, Meter.quality_score: None}, synchronize_session=False
+        )
     db.add(ProcessingHistory(import_batch_id=batch.id, action=ProcessingAction.REFUSE, stats={}))
     db.commit()
     db.refresh(batch)

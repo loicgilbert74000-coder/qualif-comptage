@@ -1,10 +1,23 @@
 import uuid
+import enum
 
-from sqlalchemy import String, ForeignKey, Date
+from sqlalchemy import String, ForeignKey, Date, Enum, Float
 from app.db_types import GUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+
+
+class MeterStatus(str, enum.Enum):
+    """Overall status of a meter's current data, independent of the
+    per-reading quality flag (incohérence/manquante/reconstruite) and of
+    whatever import batch last touched it — this is the one status a user
+    checks to know "is this meter's curve usable right now"."""
+
+    A_VALIDER = "a_valider"   # has readings, never been through validate_meter
+    VALIDE = "valide"         # validated, no correction was needed
+    CORRIGE = "corrige"       # validated, with at least one point reconstructed/smoothed
+    INVALIDE = "invalide"     # its batch was refused — data not usable
 
 
 class Meter(Base):
@@ -29,6 +42,11 @@ class Meter(Base):
     expected_frequency: Mapped[str] = mapped_column(String(16), default="auto")  # horaire, journaliere, mensuelle, auto
     service_start: Mapped[Date | None] = mapped_column(Date, nullable=True)
     service_end: Mapped[Date | None] = mapped_column(Date, nullable=True)
+
+    status: Mapped[MeterStatus] = mapped_column(
+        Enum(MeterStatus), default=MeterStatus.A_VALIDER, server_default="A_VALIDER"
+    )
+    quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-100, latest validation's result
 
     building: Mapped["Building"] = relationship(back_populates="meters")
     readings: Mapped[list["Reading"]] = relationship(back_populates="meter", cascade="all, delete-orphan")

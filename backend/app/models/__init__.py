@@ -1,6 +1,6 @@
 from app.database import Base
 from app.models.building import Building
-from app.models.meter import Meter
+from app.models.meter import Meter, MeterStatus
 from app.models.import_batch import ImportBatch, ImportStatus, ImportKind
 from app.models.reading import Reading, ReadingQuality
 from app.models.anomaly import Anomaly, AnomalyType, AnomalyResolution
@@ -12,6 +12,7 @@ __all__ = [
     "Base",
     "Building",
     "Meter",
+    "MeterStatus",
     "ImportBatch",
     "ImportStatus",
     "ImportKind",
