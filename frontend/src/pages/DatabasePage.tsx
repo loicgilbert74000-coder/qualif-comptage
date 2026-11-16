@@ -98,11 +98,18 @@ export default function DatabasePage() {
                 )}
                 {data?.rows.map((row, i) => (
                   <tr key={i}>
-                    {data.columns.map((c) => (
-                      <td key={c} className="whitespace-nowrap px-3 py-1.5 text-gray-700">
-                        {formatCell(row[c])}
-                      </td>
-                    ))}
+                    {data.columns.map((c) => {
+                      const full = formatCell(row[c]);
+                      return (
+                        <td
+                          key={c}
+                          title={full}
+                          className="max-w-[220px] truncate px-3 py-1.5 text-gray-700"
+                        >
+                          {shortenForDisplay(full)}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -145,4 +152,15 @@ function formatCell(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// A full UUID (36 chars) makes an id/foreign-key column unreadable and
+// crowds out the rest of the table. Shown short, with the full value
+// still available as a native tooltip (the `title` attribute on the
+// cell) for anyone who needs to copy or cross-reference it.
+function shortenForDisplay(value: string): string {
+  if (UUID_RE.test(value)) return value.slice(0, 8) + "…";
+  return value;
 }

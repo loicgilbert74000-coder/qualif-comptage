@@ -16,7 +16,7 @@ export default function App() {
     <QualifAIProvider>
       <div className="flex h-screen w-screen overflow-hidden bg-gray-50">
         <Sidebar />
-        <main className="flex-1 overflow-hidden">
+        <main className="min-w-0 flex-1 overflow-hidden">
           <Routes>
             <Route path="/" element={<QualificationPage />} />
             <Route path="/traitements" element={<TraitementsPage />} />
