@@ -43,6 +43,8 @@ def _row_out(reading: Reading, meter: Meter, building: Building) -> dict:
         "id": str(reading.id),
         "meter_code": meter.code,
         "building": building.name,
+        "fluid_type": meter.fluid_type,
+        "unit": meter.unit,
         "timestamp_utc": _to_utc_iso(reading.timestamp),
         "raw_value": reading.raw_value,
         "corrected_value": reading.value,

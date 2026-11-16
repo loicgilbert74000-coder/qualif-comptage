@@ -97,9 +97,11 @@ export default function DatabasePage() {
                 <tr>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Compteur</th>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Bâtiment</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Fluide</th>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Horodatage (UTC)</th>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Valeur brute</th>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Valeur corrigée</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Unité</th>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Indice de fiabilité</th>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Validité</th>
                 </tr>
@@ -107,7 +109,7 @@ export default function DatabasePage() {
               <tbody className="divide-y divide-gray-100">
                 {!loading && data && data.rows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
+                    <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
                       Aucun relevé.
                     </td>
                   </tr>
@@ -116,9 +118,11 @@ export default function DatabasePage() {
                   <tr key={row.id}>
                     <td className="whitespace-nowrap px-3 py-1.5 font-medium text-gray-800">{row.meter_code}</td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{row.building}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{row.fluid_type ?? "—"}</td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{formatUtc(row.timestamp_utc)}</td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{formatNumber(row.raw_value)}</td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{formatNumber(row.corrected_value)}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{row.unit ?? "—"}</td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">
                       {row.reliability_index === null ? "—" : `${row.reliability_index.toFixed(1)}%`}
                     </td>

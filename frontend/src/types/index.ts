@@ -193,6 +193,8 @@ export interface SimplifiedReadingRow {
   id: string;
   meter_code: string;
   building: string;
+  fluid_type: string | null;
+  unit: string | null;
   timestamp_utc: string;
   raw_value: number | null;
   corrected_value: number | null;
