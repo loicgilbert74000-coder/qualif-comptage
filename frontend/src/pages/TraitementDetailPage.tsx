@@ -258,16 +258,6 @@ export default function TraitementDetailPage() {
           <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
             {savedMeterCount} / {totalMeterCount} compteur(s) qualifié(s)
           </span>
-          {pendingCount > 0 && (
-            <button
-              type="button"
-              onClick={resolveAll}
-              disabled={busy !== null}
-              className="rounded-full border border-geneva-700 px-3 py-1 text-xs font-medium text-geneva-700 hover:bg-geneva-50 disabled:opacity-50"
-            >
-              {busy === "resolve-all" ? "Validation…" : `Valider toutes les zones en l'état (${pendingCount})`}
-            </button>
-          )}
         </div>
 
         {metersWithPending.length > 0 && (
@@ -307,6 +297,10 @@ export default function TraitementDetailPage() {
               onValidate={() => resolve("validee")}
               onCorrect={(method) => resolve("corrigee", method)}
               onPreviewChange={setPreviewPoints}
+              pendingCount={pendingCount}
+              onValidateAll={resolveAll}
+              resolvingAll={busy === "resolve-all"}
+              disabled={busy !== null}
             />
           ) : (
             <div>
@@ -399,6 +393,10 @@ function DiagnosisPanel({
   onValidate,
   onCorrect,
   onPreviewChange,
+  pendingCount,
+  onValidateAll,
+  resolvingAll,
+  disabled,
 }: {
   batchId: string;
   anomaly: AnomalyOut;
@@ -409,6 +407,15 @@ function DiagnosisPanel({
    * main QualityChart inside this (selected) zone instead of a separate
    * chart here. */
   onPreviewChange: (points: CorrectionPreviewPoint[]) => void;
+  /** How many zones of the whole dossier (not just this one) are still
+   * "en_attente" — drives the "Valider toutes en l'état" button right
+   * next to this zone's own "Valider en l'état". */
+  pendingCount: number;
+  onValidateAll: () => void;
+  resolvingAll: boolean;
+  /** True while ANY action is in flight (this zone's, another zone's, or
+   * the bulk one) — every button here is disabled meanwhile. */
+  disabled: boolean;
 }) {
   const resolved = anomaly.resolution !== "en_attente";
   const correctionPrimary = anomaly.recommended_action !== "valider";
@@ -553,6 +560,17 @@ function DiagnosisPanel({
             >
               {busy ? "…" : "Valider en l'état"}
             </button>
+            {pendingCount > 0 && (
+              <button
+                type="button"
+                onClick={onValidateAll}
+                disabled={disabled}
+                title="Valide en l'état toutes les zones encore en attente de ce dossier, pas seulement celle-ci"
+                className="rounded-lg border border-geneva-700 px-3.5 py-1.5 text-sm font-medium text-geneva-700 hover:bg-geneva-50 disabled:opacity-50"
+              >
+                {resolvingAll ? "…" : `Valider toutes les zones en l'état (${pendingCount})`}
+              </button>
+            )}
             <button
               type="button"
               disabled
