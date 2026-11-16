@@ -12,8 +12,7 @@ import type {
   OrgSettings,
   Building,
   HistoryEntry,
-  DbTable,
-  DbTableRows,
+  SimplifiedReadingsPage,
 } from "../types";
 
 const BASE = "/api";
@@ -128,10 +127,8 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  listDbTables: () => request<DbTable[]>("/db/tables"),
-
-  getDbTableRows: (table: string, limit: number, offset: number) =>
-    request<DbTableRows>(`/db/tables/${encodeURIComponent(table)}/rows?limit=${limit}&offset=${offset}`),
+  getReadings: (limit: number, offset: number) =>
+    request<SimplifiedReadingsPage>(`/db/readings?limit=${limit}&offset=${offset}`),
 
   wipeDatabase: () => request<{ status: string }>("/db/wipe", { method: "POST" }),
 };

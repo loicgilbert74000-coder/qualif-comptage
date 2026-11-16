@@ -2,18 +2,16 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import TopBar from "../components/TopBar";
 import { api } from "../api/client";
-import type { DbTable, DbTableRows } from "../types";
+import type { SimplifiedReadingsPage } from "../types";
 
 const PAGE_SIZE = 50;
 
-// A deliberately plain, read-only table browser: no grid library, no
-// virtualization, no client-side caching of previous pages — just one
-// small paginated request per table/page, so it stays light whatever the
-// database's size.
+// A deliberately simple, read-only view: one flat table of exactly what a
+// non-technical user needs to check a reading — compteur, bâtiment,
+// horodatage (UTC), valeurs brute/corrigée, indice de fiabilité et
+// validité — rather than the app's raw internal tables.
 export default function DatabasePage() {
-  const [tables, setTables] = useState<DbTable[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [data, setData] = useState<DbTableRows | null>(null);
+  const [data, setData] = useState<SimplifiedReadingsPage | null>(null);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,36 +19,19 @@ export default function DatabasePage() {
   const [wiping, setWiping] = useState(false);
 
   useEffect(() => {
-    api
-      .listDbTables()
-      .then((t) => {
-        setTables(t);
-        setSelected((cur) => cur ?? t[0]?.name ?? null);
-      })
-      .catch((e) => setError((e as Error).message || "Impossible de lister les tables."));
-  }, []);
-
-  useEffect(() => {
-    if (!selected) return;
     setLoading(true);
     setError(null);
     api
-      .getDbTableRows(selected, PAGE_SIZE, offset)
+      .getReadings(PAGE_SIZE, offset)
       .then(setData)
       .catch((e) => setError((e as Error).message || "Chargement impossible."))
       .finally(() => setLoading(false));
-  }, [selected, offset]);
-
-  function selectTable(name: string) {
-    setSelected(name);
-    setOffset(0);
-    setData(null);
-  }
+  }, [offset]);
 
   function refreshAll() {
     setData(null);
     setOffset(0);
-    api.listDbTables().then(setTables).catch(() => {});
+    api.getReadings(PAGE_SIZE, 0).then(setData).catch(() => {});
   }
 
   function wipeDatabase() {
@@ -72,29 +53,10 @@ export default function DatabasePage() {
     <div className="flex h-full flex-1 flex-col overflow-y-auto">
       <TopBar
         title="Base de données"
-        subtitle="Consultation brute des tables, en lecture seule — à usage technique uniquement."
+        subtitle="Relevés de compteurs, en lecture seule — horodatage en UTC."
       />
       <div className="flex-1 px-8 pb-10 pt-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-2">
-            {tables.map((t) => (
-              <button
-                key={t.name}
-                type="button"
-                onClick={() => selectTable(t.name)}
-                className={clsx(
-                  "rounded-full border px-3.5 py-1.5 text-xs font-medium",
-                  selected === t.name
-                    ? "border-geneva-700 bg-geneva-50 text-geneva-800"
-                    : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                )}
-              >
-                {tableLabel(t.name)}
-                <span className="ml-1.5 text-gray-400">{t.row_count}</span>
-              </button>
-            ))}
-          </div>
-
+        <div className="mb-4 flex items-center justify-end">
           {!confirmingWipe ? (
             <button
               type="button"
@@ -133,35 +95,38 @@ export default function DatabasePage() {
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
-                  {(data?.columns ?? []).map((c) => (
-                    <th key={c} className="whitespace-nowrap px-3 py-2 font-medium">
-                      {columnLabel(c)}
-                    </th>
-                  ))}
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Compteur</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Bâtiment</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Horodatage (UTC)</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Valeur brute</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Valeur corrigée</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Indice de fiabilité</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Validité</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {!loading && data && data.rows.length === 0 && (
                   <tr>
-                    <td colSpan={Math.max(data.columns.length, 1)} className="px-3 py-8 text-center text-gray-400">
-                      Table vide.
+                    <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
+                      Aucun relevé.
                     </td>
                   </tr>
                 )}
-                {data?.rows.map((row, i) => (
-                  <tr key={i}>
-                    {data.columns.map((c) => {
-                      const full = formatCell(row[c]);
-                      return (
-                        <td
-                          key={c}
-                          title={full}
-                          className="max-w-[220px] truncate px-3 py-1.5 text-gray-700"
-                        >
-                          {shortenForDisplay(full)}
-                        </td>
-                      );
-                    })}
+                {data?.rows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="whitespace-nowrap px-3 py-1.5 font-medium text-gray-800">{row.meter_code}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{row.building}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{formatUtc(row.timestamp_utc)}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{formatNumber(row.raw_value)}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">{formatNumber(row.corrected_value)}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-gray-700">
+                      {row.reliability_index === null ? "—" : `${row.reliability_index.toFixed(1)}%`}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5">
+                      <span className={clsx("rounded-full px-2 py-0.5 text-xs font-medium", VALIDITY_STYLE[row.validity])}>
+                        {VALIDITY_LABEL[row.validity] ?? row.validity}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -173,7 +138,7 @@ export default function DatabasePage() {
         {data && data.total > 0 && (
           <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
             <span>
-              {from}–{to} sur {data.total} ligne(s)
+              {from}–{to} sur {data.total} relevé(s)
             </span>
             <div className="flex gap-2">
               <button
@@ -200,103 +165,29 @@ export default function DatabasePage() {
   );
 }
 
-function formatCell(value: unknown): string {
+function formatNumber(value: number | null): string {
   if (value === null || value === undefined) return "—";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
+  return value.toLocaleString("fr-CH", { maximumFractionDigits: 2 });
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// A full UUID (36 chars) makes an id/foreign-key column unreadable and
-// crowds out the rest of the table. Shown short, with the full value
-// still available as a native tooltip (the `title` attribute on the
-// cell) for anyone who needs to copy or cross-reference it.
-function shortenForDisplay(value: string): string {
-  if (UUID_RE.test(value)) return value.slice(0, 8) + "…";
-  return value;
+function formatUtc(iso: string): string {
+  // Kept as plain text rather than Date.toLocaleString(), which would
+  // re-render it in the browser's own local time — the whole point here
+  // is to show UTC, unambiguously, regardless of where it's opened.
+  const [date, time] = iso.replace("+00:00", "").split("T");
+  return `${date} ${time?.slice(0, 8) ?? ""} UTC`;
 }
 
-const TABLE_LABELS: Record<string, string> = {
-  anomalies: "Anomalies",
-  buildings: "Bâtiments",
-  import_batches: "Imports",
-  meter_validations: "Validations de compteurs",
-  meters: "Compteurs",
-  org_settings: "Paramètres",
-  processing_history: "Historique des traitements",
-  readings: "Relevés",
+const VALIDITY_LABEL: Record<string, string> = {
+  a_valider: "À valider",
+  valide: "Validée",
+  corrige: "Corrigée",
+  invalide: "Invalide",
 };
 
-function tableLabel(name: string): string {
-  return TABLE_LABELS[name] ?? name;
-}
-
-const COLUMN_LABELS: Record<string, string> = {
-  id: "Identifiant",
-  import_batch_id: "Import",
-  meter_id: "Compteur",
-  type: "Type",
-  subtype: "Sous-type",
-  period_start: "Début de période",
-  period_end: "Fin de période",
-  description: "Description",
-  deviation_pct: "Écart (%)",
-  resolution: "Résolution",
-  code: "Code",
-  name: "Nom",
-  address: "Adresse",
-  typology: "Typologie",
-  surface_m2: "Surface (m²)",
-  action: "Action",
-  performed_at: "Effectué le",
-  reconstruction_method: "Méthode de reconstruction",
-  stats: "Statistiques",
-  kind: "Type d'import",
-  file_count: "Nombre de fichiers",
-  storage_path: "Chemin de stockage",
-  column_mapping: "Correspondance des colonnes",
-  delimiter: "Séparateur",
-  decimal_separator: "Séparateur décimal",
-  building_count: "Nombre de bâtiments",
-  meter_count: "Nombre de compteurs",
-  quality_score: "Score de qualité",
-  status: "Statut",
-  content_hash: "Empreinte du contenu",
-  created_at: "Créé le",
-  analyzed_at: "Analysé le",
-  building_id: "Bâtiment",
-  label: "Libellé",
-  fluid_type: "Type de fluide",
-  unit: "Unité",
-  role: "Rôle",
-  measurement_kind: "Nature de mesure",
-  parent_meter_id: "Compteur parent",
-  expected_frequency: "Fréquence attendue",
-  service_start: "Mise en service",
-  service_end: "Fin de service",
-  validated_at: "Validé le",
-  points_reconstructed: "Points reconstruits",
-  points_smoothed: "Points lissés",
-  quality_before: "Qualité avant",
-  quality_after: "Qualité après",
-  spike_deviation_pct: "Seuil pic (%)",
-  drop_deviation_pct: "Seuil chute (%)",
-  reference_window_periods: "Fenêtre de référence (périodes)",
-  flatline_min_run: "Plateau minimal (points)",
-  allow_negative_values: "Valeurs négatives autorisées",
-  historical_min_points: "Historique minimal (points)",
-  robust_mad_multiplier: "Multiplicateur MAD robuste",
-  historical_extreme_ratio: "Ratio extrême historique",
-  zero_active_min_history: "Historique minimal (zéro actif)",
-  seasonal_activity_min_history: "Historique minimal (saisonnier)",
-  timestamp_tolerance_pct: "Tolérance horodatage (%)",
-  timestamp: "Horodatage",
-  value: "Valeur",
-  raw_value: "Valeur brute",
-  quality: "Qualité",
+const VALIDITY_STYLE: Record<string, string> = {
+  a_valider: "bg-amber-50 text-amber-700",
+  valide: "bg-green-50 text-green-700",
+  corrige: "bg-blue-50 text-blue-700",
+  invalide: "bg-red-50 text-red-700",
 };
-
-function columnLabel(key: string): string {
-  return COLUMN_LABELS[key] ?? key;
-}

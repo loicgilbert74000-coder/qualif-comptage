@@ -189,15 +189,19 @@ export interface HistoryEntry {
   stats: Record<string, unknown>;
 }
 
-export interface DbTable {
-  name: string;
-  row_count: number;
+export interface SimplifiedReadingRow {
+  id: string;
+  meter_code: string;
+  building: string;
+  timestamp_utc: string;
+  raw_value: number | null;
+  corrected_value: number | null;
+  reliability_index: number | null;
+  validity: string;
 }
 
-export interface DbTableRows {
-  table: string;
-  columns: string[];
-  rows: Record<string, unknown>[];
+export interface SimplifiedReadingsPage {
+  rows: SimplifiedReadingRow[];
   total: number;
   limit: number;
   offset: number;

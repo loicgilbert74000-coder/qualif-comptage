@@ -1,49 +1,54 @@
-"""A minimal, read-only database browser.
+"""A minimal, read-only database view.
 
-Lets a technical user glance at the raw rows behind the app (SQLite in the
-desktop build, PostgreSQL in the Docker deployment) without opening a
-separate DB tool. Deliberately simple and cheap: no joins, no full-table
-loads, no client-side framework — one paginated SELECT per request, driven
-entirely by the ORM models already registered on `Base` (so it never needs
-its own list of tables to keep in sync, and never builds SQL by splicing a
-table name into a string).
+Shows one simplified, flattened table of readings — meter, building,
+timestamp (UTC), raw value, corrected value, the meter's reliability index
+and its overall validity — instead of the app's raw internal tables.
+Deliberately limited to exactly what a non-technical user needs to check,
+rather than a generic table browser.
 """
 from __future__ import annotations
 
-import enum
-import uuid
-from datetime import date, datetime
-from decimal import Decimal
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Base
+from app.models import Base, Reading, Meter, Building
 
 router = APIRouter(prefix="/api/db", tags=["database"])
 
-# Built once at import time from every model registered on Base — picks up
-# new tables automatically, never needs editing when a model is added.
+# Built once at import time from every model registered on Base — used
+# only by the wipe endpoint below, which still clears every table
+# regardless of what the simplified view displays.
 _MAPPERS = sorted(Base.registry.mappers, key=lambda m: m.local_table.name)
 _TABLES_BY_NAME = {m.local_table.name: m.class_ for m in _MAPPERS}
 
+# Source files carry a naive timestamp with no timezone of their own —
+# Geneva/Swiss metering exports report local time (Europe/Zurich, with its
+# own DST rules), never UTC. Localizing as this zone before converting is
+# an assumption, not a certainty the data itself states; flagged here so
+# it's easy to find and change if a source turns out to already be UTC.
+_SOURCE_TZ = ZoneInfo("Europe/Zurich")
+_UTC = ZoneInfo("UTC")
 
-def _cell(value):
-    """Make any column value JSON-safe, without guessing at its meaning."""
-    if value is None or isinstance(value, (str, int, float, bool, dict, list)):
-        return value
-    if isinstance(value, uuid.UUID):
-        return str(value)
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, enum.Enum):
-        return value.value
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, (bytes, bytearray)):
-        return f"<{len(value)} octet(s)>"
-    return str(value)
+
+def _to_utc_iso(ts: datetime) -> str:
+    return ts.replace(tzinfo=_SOURCE_TZ).astimezone(_UTC).isoformat()
+
+
+def _row_out(reading: Reading, meter: Meter, building: Building) -> dict:
+    return {
+        "id": str(reading.id),
+        "meter_code": meter.code,
+        "building": building.name,
+        "timestamp_utc": _to_utc_iso(reading.timestamp),
+        "raw_value": reading.raw_value,
+        "corrected_value": reading.value,
+        "reliability_index": meter.quality_score,
+        "validity": meter.status.value,
+    }
 
 
 @router.post("/wipe")
@@ -65,50 +70,25 @@ def wipe_database(db: Session = Depends(get_db)):
     return {"status": "ok"}
 
 
-@router.get("/tables")
-def list_tables(db: Session = Depends(get_db)):
-    """Table names with their row count — one COUNT(*) each, no row data,
-    so this stays instant even if a table is large."""
-    return [
-        {"name": name, "row_count": db.query(model).count()}
-        for name, model in _TABLES_BY_NAME.items()
-    ]
-
-
-@router.get("/tables/{table}/rows")
-def table_rows(
-    table: str,
+@router.get("/readings")
+def list_readings(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
-    """One page of raw rows from `table`. Capped at 200 rows per call and
-    always driven by LIMIT/OFFSET in the database — never loads the whole
-    table into memory, however big it gets."""
-    model = _TABLES_BY_NAME.get(table)
-    if model is None:
-        raise HTTPException(404, "Table inconnue")
-
-    mapper = model.__mapper__
-    columns = [c.key for c in mapper.column_attrs]
-    # Attribute keys (not raw column names, which can differ) of whichever
-    # column_attrs sit on the primary key, so getattr(model, key) below
-    # always resolves to a real mapped attribute.
-    pk_cols = [c.key for c in mapper.column_attrs if c.columns[0].primary_key]
-
-    total = db.query(model).count()
-    query = db.query(model)
-    if pk_cols:
-        # Newest-looking rows first when the primary key sorts that way
-        # (sequential ids, time-ordered UUIDs); harmless either way, it's
-        # only a display order.
-        query = query.order_by(*[getattr(model, c).desc() for c in pk_cols])
-    rows = query.offset(offset).limit(limit).all()
+    """One page of the simplified reading view, newest first. Always
+    driven by LIMIT/OFFSET in the database — never loads the whole table
+    into memory, however big it gets."""
+    base_query = (
+        db.query(Reading, Meter, Building)
+        .join(Meter, Meter.id == Reading.meter_id)
+        .join(Building, Building.id == Meter.building_id)
+    )
+    total = base_query.count()
+    rows = base_query.order_by(Reading.timestamp.desc(), Reading.id.desc()).offset(offset).limit(limit).all()
 
     return {
-        "table": table,
-        "columns": columns,
-        "rows": [{c: _cell(getattr(obj, c)) for c in columns} for obj in rows],
+        "rows": [_row_out(r, m, b) for r, m, b in rows],
         "total": total,
         "limit": limit,
         "offset": offset,
