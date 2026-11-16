@@ -401,7 +401,12 @@ function DiagnosisPanel({
       .getCorrectionOptions(batchId, anomaly.id)
       .then((opts) => {
         setOptions(opts);
-        setSelectedMethod(opts[0]?.method ?? "");
+        // "Profil type" (médiane du même créneau saisonnier) est le choix
+        // par défaut recommandé quand il est proposé pour ce compteur; les
+        // autres méthodes restent sélectionnables mais ne sont pré-choisies
+        // que si "Profil type" n'est pas applicable (ex. compteurs à index).
+        const defaultOpt = opts.find((o) => o.method === "profil_type") ?? opts[0];
+        setSelectedMethod(defaultOpt?.method ?? "");
       })
       .finally(() => setLoadingOptions(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -460,23 +465,27 @@ function DiagnosisPanel({
               <p className="text-xs text-gray-400">Chargement des correctifs disponibles…</p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {options.map((opt, i) => (
-                  <button
-                    key={opt.method}
-                    type="button"
-                    onClick={() => setSelectedMethod(opt.method)}
-                    title={opt.description}
-                    className={clsx(
-                      "rounded-lg border px-3 py-1.5 text-left text-xs font-medium",
-                      selectedMethod === opt.method
-                        ? "border-geneva-700 bg-geneva-50 text-geneva-800"
-                        : "border-gray-300 text-gray-700 hover:bg-gray-50"
-                    )}
-                  >
-                    {opt.label}
-                    {i === 0 && <span className="ml-1 font-normal text-geneva-600">(recommandé)</span>}
-                  </button>
-                ))}
+                {options.map((opt) => {
+                  const isDefault =
+                    opt.method === (options.find((o) => o.method === "profil_type")?.method ?? options[0]?.method);
+                  return (
+                    <button
+                      key={opt.method}
+                      type="button"
+                      onClick={() => setSelectedMethod(opt.method)}
+                      title={opt.description}
+                      className={clsx(
+                        "rounded-lg border px-3 py-1.5 text-left text-xs font-medium",
+                        selectedMethod === opt.method
+                          ? "border-geneva-700 bg-geneva-50 text-geneva-800"
+                          : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                      )}
+                    >
+                      {opt.label}
+                      {isDefault && <span className="ml-1 font-normal text-geneva-600">(recommandé)</span>}
+                    </button>
+                  );
+                })}
               </div>
             )}
             {options.find((o) => o.method === selectedMethod) && (
@@ -521,7 +530,7 @@ function DiagnosisPanel({
               type="button"
               disabled
               title="Fonctionnalité à venir"
-              className="rounded-lg border border-violet-200 bg-violet-50 px-3.5 py-1.5 text-sm font-medium text-violet-400 opacity-60 cursor-not-allowed"
+              className="rounded-lg border border-geneva-700/20 bg-geneva-50 px-3.5 py-1.5 text-sm font-medium text-geneva-700 opacity-60 cursor-not-allowed"
             >
               Discuter avec Qualif IA
             </button>

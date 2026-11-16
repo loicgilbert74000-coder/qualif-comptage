@@ -59,11 +59,14 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <section className="mx-3 mb-3 rounded-xl border border-violet-300/30 bg-violet-300/10 p-3 shadow-[0_0_18px_rgba(139,92,246,0.08)]" aria-label="Réglages Qualif IA">
+      <section
+        className="mx-3 mb-3 overflow-hidden rounded-xl border border-sky-400/20 bg-white/5 p-3"
+        aria-label="Réglages Qualif IA"
+      >
         <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
-          <IconSparkle className="h-4 w-4 text-violet-300" />
-          <span>Qualif IA</span>
-          <span className="ml-auto rounded-full bg-violet-300/15 px-2 py-0.5 text-[10px] font-medium text-violet-200">
+          <IconSparkle className="h-4 w-4 shrink-0 text-sky-300" />
+          <span className="min-w-0 flex-1 truncate">Qualif IA</span>
+          <span className="shrink-0 rounded-full bg-sky-400/15 px-2 py-0.5 text-[10px] font-medium text-sky-200">
             {qualifAI.enabled ? "Active" : "En pause"}
           </span>
         </div>
@@ -125,7 +128,7 @@ function AISwitch({
 }) {
   return (
     <div className={clsx("flex items-center justify-between gap-2 text-[11px]", disabled ? "text-slate-500" : "text-slate-200")}>
-      <span>{label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
       <button
         type="button"
         role="switch"
@@ -134,8 +137,8 @@ function AISwitch({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={clsx(
-          "relative h-5 w-9 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-violet-300 focus:ring-offset-1 focus:ring-offset-sidebar disabled:cursor-not-allowed disabled:opacity-40",
-          checked ? "bg-violet-500" : "bg-slate-600"
+          "relative h-5 w-9 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-1 focus:ring-offset-sidebar disabled:cursor-not-allowed disabled:opacity-40",
+          checked ? "bg-geneva-600" : "bg-slate-600"
         )}
       >
         <span className={clsx("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform", checked ? "translate-x-4" : "translate-x-0.5")} />
