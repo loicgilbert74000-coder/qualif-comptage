@@ -14,6 +14,7 @@ time.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -69,21 +70,58 @@ def _wait_until_ready(url: str, timeout_s: float = 30.0) -> bool:
     return False
 
 
-def _is_already_serving(url: str) -> bool:
-    """True if something is already answering /api/health on our port —
-    almost always a previous launch of this very app that the user never
-    fully closed (e.g. it's still in the system tray, or a window was
-    closed without stopping the background process). In that case we must
-    NOT try to bind the port again: uvicorn would crash with WinError 10048
-    ("only one usage of each socket address is normally permitted") and the
-    app would appear to fail to start, even though a working instance is
-    already running. We simply point a new window at the existing server
-    instead of starting a second one."""
+def _already_serving_version(url: str) -> str | None:
+    """The version reported by whatever is already answering /api/health on
+    our port, or None if nothing answers there.
+
+    Something answering here is almost always a previous launch of this
+    very app that the user never fully closed (e.g. it's still in the
+    system tray, or a window was closed without stopping the background
+    process). In that case we must NOT try to bind the port again: uvicorn
+    would crash with WinError 10048 ("only one usage of each socket address
+    is normally permitted") and the app would appear to fail to start, even
+    though a working instance is already running. We simply point a new
+    window at the existing server instead of starting a second one — unless
+    that existing server is running an older build (see _warn_stale_version
+    below), which is the usual reason an update "doesn't seem to apply"."""
     try:
-        urllib.request.urlopen(f"{url}/api/health", timeout=0.5)
-        return True
+        with urllib.request.urlopen(f"{url}/api/health", timeout=0.5) as r:
+            return json.loads(r.read().decode("utf-8")).get("version")
     except Exception:
-        return False
+        return None
+
+
+def _warn_stale_version(running_version: str | None) -> None:
+    """Tell the person plainly why they might not be seeing today's fixes:
+    an older build of this same app is still running in the background
+    (most often left over from a window that was closed without the
+    process actually exiting), and this newer .exe is just reusing that
+    old server rather than silently showing stale behaviour with no
+    explanation."""
+    from app._version import BUILD_VERSION
+
+    if not running_version or running_version == BUILD_VERSION:
+        return
+    message = (
+        f"Une version plus ancienne de l'application tourne déjà en arrière-plan "
+        f"({running_version}), et cette fenêtre va s'y connecter au lieu de "
+        f"démarrer la version {BUILD_VERSION} que vous venez de lancer.\n\n"
+        f"Pour utiliser la nouvelle version : fermez cette fenêtre, ouvrez le "
+        f"Gestionnaire des tâches, terminez tout processus \"QualifComptage\", "
+        f"puis relancez l'application."
+    )
+    logging.getLogger("desktop").warning(
+        "Version déjà en cours (%s) différente de celle lancée (%s) — avertissement affiché",
+        running_version, BUILD_VERSION,
+    )
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, message, APP_TITLE, 0x30)  # MB_ICONWARNING
+            return
+        except Exception:
+            pass
+    _safe_print(message)
 
 
 def main() -> None:
@@ -112,12 +150,15 @@ def main() -> None:
 
     _safe_print(f"Qualification des données de comptage — données dans : {data_dir}")
 
-    if _is_already_serving(url):
+    running_version = _already_serving_version(url)
+    if running_version is not None:
         # Another instance (or a previous launch left running in the
         # background) is already serving the app on this port: reuse it
         # instead of starting a second server, which would crash trying to
-        # bind the same address.
-        log.info("Un serveur local répond déjà sur %s — réutilisation (pas de second serveur démarré)", url)
+        # bind the same address. If it's running an older build, say so —
+        # this is the usual reason a just-shipped fix doesn't seem to apply.
+        log.info("Un serveur local répond déjà sur %s (version %s) — réutilisation (pas de second serveur démarré)", url, running_version)
+        _warn_stale_version(running_version)
         server_thread = None
     else:
         import uvicorn

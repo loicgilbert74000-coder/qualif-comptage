@@ -87,6 +87,7 @@ jobs:
             # WebView2 loader DLLs, which PyInstaller's static analysis
             # won't find on its own.
             EXTRA_ARGS=(
+              --windowed
               --collect-all webview
               --collect-all clr_loader
               --collect-all pythonnet
