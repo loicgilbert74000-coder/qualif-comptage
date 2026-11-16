@@ -11,6 +11,8 @@ import type {
   OrgSettings,
   Building,
   HistoryEntry,
+  DbTable,
+  DbTableRows,
 } from "../types";
 
 const BASE = "/api";
@@ -108,4 +110,9 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }),
+
+  listDbTables: () => request<DbTable[]>("/db/tables"),
+
+  getDbTableRows: (table: string, limit: number, offset: number) =>
+    request<DbTableRows>(`/db/tables/${encodeURIComponent(table)}/rows?limit=${limit}&offset=${offset}`),
 };

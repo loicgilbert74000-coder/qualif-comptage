@@ -8,6 +8,7 @@ import ExportsPage from "./pages/ExportsPage";
 import HistoriquePage from "./pages/HistoriquePage";
 import BatimentsPage from "./pages/BatimentsPage";
 import ParametresPage from "./pages/ParametresPage";
+import DatabasePage from "./pages/DatabasePage";
 import { QualifAIProvider } from "./context/QualifAIContext";
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="/historique" element={<HistoriquePage />} />
             <Route path="/batiments" element={<BatimentsPage />} />
             <Route path="/parametres" element={<ParametresPage />} />
+            <Route path="/base-donnees" element={<DatabasePage />} />
           </Routes>
         </main>
       </div>

@@ -159,3 +159,17 @@ export interface HistoryEntry {
   reconstruction_method: string | null;
   stats: Record<string, unknown>;
 }
+
+export interface DbTable {
+  name: string;
+  row_count: number;
+}
+
+export interface DbTableRows {
+  table: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  total: number;
+  limit: number;
+  offset: number;
+}

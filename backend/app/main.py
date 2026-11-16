@@ -10,7 +10,7 @@ from sqlalchemy import inspect, text
 from app.config import settings
 from app.database import engine
 from app.models import Base
-from app.routers import imports, buildings, history, settings_router
+from app.routers import imports, buildings, history, settings_router, database_viewer
 from app._version import BUILD_VERSION
 
 app = FastAPI(title="Qualification des données de comptage", version="0.1.0")
@@ -85,6 +85,7 @@ app.include_router(imports.router)
 app.include_router(buildings.router)
 app.include_router(history.router)
 app.include_router(settings_router.router)
+app.include_router(database_viewer.router)
 
 
 @app.get("/api/health")

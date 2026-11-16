@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { to: "/exports", label: "Gestion des exports", icon: IconDownload },
   { to: "/batiments", label: "Bâtiments & compteurs", icon: IconBuilding },
   { to: "/parametres", label: "Types d'erreurs", icon: IconSearch },
+  { to: "/base-donnees", label: "Base de données", icon: IconDatabase },
 ];
 
 export default function Sidebar() {
@@ -208,6 +209,15 @@ function IconGear({ className }: { className?: string }) {
         strokeWidth="1.8"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+function IconDatabase({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className}>
+      <ellipse cx="12" cy="6" rx="7.5" ry="2.8" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M4.5 6v12c0 1.55 3.36 2.8 7.5 2.8s7.5-1.25 7.5-2.8V6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M4.5 12c0 1.55 3.36 2.8 7.5 2.8s7.5-1.25 7.5-2.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
