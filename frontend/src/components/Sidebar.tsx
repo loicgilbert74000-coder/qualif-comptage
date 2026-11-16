@@ -127,24 +127,27 @@ function AISwitch({
   onChange: (value: boolean) => void;
   disabled?: boolean;
 }) {
+  // A plain native checkbox, like the one already used for a boolean
+  // setting in QualityCriteriaDialog — simpler and more consistent with
+  // the rest of the app than a bespoke pill-switch, which never stopped
+  // looking out of place here however it was restyled.
   return (
-    <div className={clsx("flex items-center justify-between gap-2 text-[11px]", disabled ? "text-slate-500" : "text-slate-200")}>
+    <label
+      className={clsx(
+        "flex items-center justify-between gap-2 text-[11px]",
+        disabled ? "cursor-not-allowed text-slate-500" : "cursor-pointer text-slate-200"
+      )}
+    >
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
+      <input
+        type="checkbox"
+        checked={checked}
         disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={clsx(
-          "relative h-5 w-9 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-1 focus:ring-offset-sidebar disabled:cursor-not-allowed disabled:opacity-40",
-          checked ? "bg-geneva-600" : "bg-slate-600"
-        )}
-      >
-        <span className={clsx("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform", checked ? "translate-x-4" : "translate-x-0.5")} />
-      </button>
-    </div>
+        aria-label={label}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-3.5 w-3.5 shrink-0 accent-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
+      />
+    </label>
   );
 }
 
