@@ -32,8 +32,8 @@ export default function Sidebar() {
     <aside className="flex h-full w-64 shrink-0 flex-col overflow-y-auto bg-sidebar text-slate-300">
       <div className="flex items-center px-5 py-5">
         <img
-          src="/geneva-logo.png"
-          alt="République et Canton de Genève"
+          src="/qualif-comptage-logo.png"
+          alt="Qualif Comptage"
           className="h-[52px] w-auto"
         />
       </div>
