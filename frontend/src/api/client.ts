@@ -1,6 +1,7 @@
 import type {
   ImportBatchSummary,
   ImportBatchDetail,
+  ImportPreview,
   AnomalyOut,
   SeriesPoint,
   SynthesisOut,
@@ -36,10 +37,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   listImports: () => request<ImportBatchSummary[]>("/imports"),
 
-  uploadImport: async (files: File[]): Promise<ImportBatchSummary> => {
+  uploadImport: async (files: File[], selectedMeters?: string[]): Promise<ImportBatchSummary> => {
     const form = new FormData();
     files.forEach((f) => form.append("files", f));
+    if (selectedMeters) form.append("selected_meters", JSON.stringify(selectedMeters));
     return request<ImportBatchSummary>("/imports", { method: "POST", body: form });
+  },
+
+  previewImport: async (files: File[]): Promise<ImportPreview> => {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f));
+    return request<ImportPreview>("/imports/preview", { method: "POST", body: form });
   },
 
   getImport: (id: string) => request<ImportBatchDetail>(`/imports/${id}`),

@@ -102,6 +102,108 @@ def _content_hash(files: list[tuple[str, bytes]]) -> str:
     return hashlib.sha256("|".join(per_file).encode("utf-8")).hexdigest()
 
 
+def preview_import(
+    db: Session,
+    files: list[tuple[str, bytes]],
+    *,
+    column_mapping: dict | None = None,
+    delimiter: str | None = None,
+    decimal_separator: str = ",",
+) -> dict:
+    """Parse the given files WITHOUT persisting anything — no Building,
+    Meter, Reading or ImportBatch row, no file written to storage — so the
+    import screen can show the user what's inside a CSV (or a folder of
+    them) and let them pick which detected meters to actually import,
+    before `ingest_files()` is ever called.
+
+    Also flags, per meter, whether it already has readings in the
+    database overlapping the file's own period — the signal the import
+    screen needs to warn "ces données sont déjà en base" — and, at the
+    whole-upload level, whether this exact set of files was already
+    imported before (same mechanism as `ingest_files()`'s own
+    content-hash dedup, surfaced here before the user commits to anything)."""
+    content_hash = _content_hash(files)
+    duplicate_of = (
+        db.query(ImportBatch)
+        .filter(ImportBatch.content_hash == content_hash)
+        .order_by(ImportBatch.created_at)
+        .first()
+    )
+
+    warnings: list[str] = []
+    # One entry per meter CODE, merged across every file in this upload —
+    # a "dossier" import can spread one meter's readings across several
+    # files (e.g. one per month), and the preview should show it as the
+    # one meter it is, not once per file.
+    aggregated: dict[str, dict] = {}
+    for filename, content in files:
+        result: ParseResult = parse_csv_bytes(
+            content, filename, column_mapping=column_mapping, delimiter=delimiter, decimal_separator=decimal_separator
+        )
+        warnings.extend(result.warnings)
+        for s in result.series:
+            if s.rows.empty:
+                continue
+            entry = aggregated.setdefault(
+                s.meter_code,
+                {
+                    "building_code": s.building_code,
+                    "fluid_type": s.fluid_type,
+                    "role": s.role,
+                    "unit": s.unit,
+                    "measurement_kind": s.measurement_kind,
+                    "row_count": 0,
+                    "period_start": None,
+                    "period_end": None,
+                },
+            )
+            entry["row_count"] += int(len(s.rows))
+            series_min = s.rows["timestamp"].min()
+            series_max = s.rows["timestamp"].max()
+            if entry["period_start"] is None or series_min < entry["period_start"]:
+                entry["period_start"] = series_min
+            if entry["period_end"] is None or series_max > entry["period_end"]:
+                entry["period_end"] = series_max
+
+    meters_out = []
+    for code in sorted(aggregated):
+        entry = aggregated[code]
+        already_in_base = False
+        existing_row_count = 0
+        existing_meter = db.query(Meter).filter(Meter.code == code).one_or_none()
+        if existing_meter is not None:
+            q = db.query(Reading).filter(Reading.meter_id == existing_meter.id)
+            if entry["period_start"] is not None and entry["period_end"] is not None:
+                q = q.filter(
+                    Reading.timestamp >= entry["period_start"],
+                    Reading.timestamp <= entry["period_end"],
+                )
+            existing_row_count = q.count()
+            already_in_base = existing_row_count > 0
+        meters_out.append(
+            {
+                "meter_code": code,
+                "building_code": entry["building_code"],
+                "fluid_type": entry["fluid_type"],
+                "role": entry["role"],
+                "unit": entry["unit"],
+                "measurement_kind": entry["measurement_kind"],
+                "row_count": entry["row_count"],
+                "period_start": entry["period_start"].date().isoformat() if entry["period_start"] is not None else None,
+                "period_end": entry["period_end"].date().isoformat() if entry["period_end"] is not None else None,
+                "already_in_base": already_in_base,
+                "existing_row_count": existing_row_count,
+            }
+        )
+
+    return {
+        "meters": meters_out,
+        "warnings": warnings,
+        "exact_duplicate": duplicate_of is not None,
+        "duplicate_of_name": duplicate_of.name if duplicate_of is not None else None,
+    }
+
+
 def ingest_files(
     db: Session,
     files: list[tuple[str, bytes]],
@@ -110,6 +212,7 @@ def ingest_files(
     column_mapping: dict | None = None,
     delimiter: str | None = None,
     decimal_separator: str = ",",
+    selected_meter_codes: set[str] | None = None,
 ) -> ImportBatch:
     """Parse one or several CSV files and persist them as a single
     ImportBatch, auto-creating any Building/Meter encountered for the first
@@ -120,7 +223,15 @@ def ingest_files(
     before, the data is not re-ingested a second time: a new ImportBatch
     row is still created, so the attempt stays visible in the import list,
     but with ImportStatus.DEJA_TRAITE and no readings/anomalies of its
-    own."""
+    own.
+
+    `selected_meter_codes`, when given, restricts ingestion to just those
+    meter codes — everything else detected in the file(s) is skipped
+    entirely (no Building/Meter row created for it, no readings written).
+    This is how the import-preview panel's per-meter checkboxes take
+    effect: the preview shows every meter parse_csv_bytes() finds, the
+    user unchecks the ones they don't want, and only the remainder reaches
+    here. `None` (the default) imports everything, as before."""
 
     kind = ImportKind.DOSSIER if len(files) > 1 else ImportKind.FICHIER
     name = display_name or (files[0][0] if len(files) == 1 else f"Dossier ({len(files)} fichiers)")
@@ -202,6 +313,8 @@ def ingest_files(
         all_warnings.extend(result.warnings)
 
         for s in result.series:
+            if selected_meter_codes is not None and s.meter_code not in selected_meter_codes:
+                continue
             building = _get_or_create_building(db, s.building_code or s.meter_code)
             meter = _get_or_create_meter(db, building, s)
             buildings_seen.add(building.code)
@@ -239,6 +352,12 @@ def ingest_files(
                         "quality": ReadingQuality.VALIDE,
                     }
                 )
+
+    if selected_meter_codes is not None and not meters_seen:
+        db.rollback()
+        raise ValueError(
+            "Aucun des compteurs sélectionnés n'a été trouvé dans le(s) fichier(s) — rien à importer."
+        )
 
     if reading_mappings:
         db.bulk_insert_mappings(Reading, reading_mappings)

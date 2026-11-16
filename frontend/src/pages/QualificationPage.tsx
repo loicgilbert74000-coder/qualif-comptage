@@ -8,7 +8,7 @@ import ProgressBar from "../components/ProgressBar";
 import LoadingOverlay from "../components/LoadingOverlay";
 import DetailedAnalysis from "../components/DetailedAnalysis";
 import { api } from "../api/client";
-import type { ImportBatchSummary, ImportBatchDetail } from "../types";
+import type { ImportBatchSummary, ImportBatchDetail, ImportPreview } from "../types";
 
 export default function QualificationPage() {
   const [imports, setImports] = useState<ImportBatchSummary[]>([]);
@@ -17,6 +17,11 @@ export default function QualificationPage() {
   const [uploading, setUploading] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [previewing, setPreviewing] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -46,18 +51,56 @@ export default function QualificationPage() {
 
   async function handleUpload(files: FileList | null) {
     if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+    setPreviewing(true);
+    setError(null);
+    try {
+      const result = await api.previewImport(fileArray);
+      setPendingFiles(fileArray);
+      setPreview(result);
+      // Pre-check every detected meter, including the ones already in
+      // base — the warning is there so the person can decide, not to
+      // silently skip them.
+      setSelectedCodes(new Set(result.meters.map((m) => m.meter_code)));
+    } catch (e) {
+      setError((e as Error).message);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (folderInputRef.current) folderInputRef.current.value = "";
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  function cancelPreview() {
+    setPendingFiles(null);
+    setPreview(null);
+    setSelectedCodes(new Set());
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (folderInputRef.current) folderInputRef.current.value = "";
+  }
+
+  function toggleMeter(code: string) {
+    setSelectedCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  }
+
+  async function confirmImport() {
+    if (!pendingFiles) return;
     setUploading(true);
     setError(null);
     try {
-      const batch = await api.uploadImport(Array.from(files));
+      const batch = await api.uploadImport(pendingFiles, Array.from(selectedCodes));
       await refreshList();
       setActiveId(batch.id);
+      cancelPreview();
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      if (folderInputRef.current) folderInputRef.current.value = "";
     }
   }
 
@@ -95,6 +138,17 @@ export default function QualificationPage() {
       <StepIndicator current={detail ? 2 : 1} />
 
       {reanalyzing && <LoadingOverlay label="Réanalyse de tous les fichiers en cours…" />}
+      {previewing && <LoadingOverlay label="Lecture du fichier…" />}
+      {preview && pendingFiles && (
+        <ImportPreviewModal
+          preview={preview}
+          selectedCodes={selectedCodes}
+          onToggle={toggleMeter}
+          onCancel={cancelPreview}
+          onConfirm={confirmImport}
+          importing={uploading}
+        />
+      )}
 
       <div className="flex-1 px-8 pb-6">
         <div className="flex flex-col gap-4">
@@ -234,6 +288,114 @@ export default function QualificationPage() {
           </section>
 
           {detail && <DetailedAnalysis detail={detail} onAction={refreshActive} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportPreviewModal({
+  preview,
+  selectedCodes,
+  onToggle,
+  onCancel,
+  onConfirm,
+  importing,
+}: {
+  preview: ImportPreview;
+  selectedCodes: Set<string>;
+  onToggle: (code: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  importing: boolean;
+}) {
+  function formatPeriod(start: string | null, end: string | null) {
+    if (!start || !end) return "—";
+    const f = (d: string) => new Date(d).toLocaleDateString("fr-CH");
+    return `${f(start)} - ${f(end)}`;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl">
+        <div className="border-b border-gray-200 px-5 py-4">
+          <h3 className="text-base font-semibold text-gray-900">Aperçu avant import</h3>
+          <p className="mt-0.5 text-xs text-gray-500">
+            Choisissez les compteurs à importer. Les autres seront ignorés.
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {preview.exact_duplicate && (
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Ce fichier (ou ce dossier) a déjà été importé à l'identique
+              {preview.duplicate_of_name ? ` (« ${preview.duplicate_of_name} »)` : ""}. Vous pouvez tout de même
+              continuer, mais l'import sera marqué comme déjà traité.
+            </div>
+          )}
+          {preview.warnings.length > 0 && (
+            <div className="mb-3 space-y-1">
+              {preview.warnings.map((w, i) => (
+                <p key={i} className="text-xs text-amber-700">
+                  ⚠ {w}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {preview.meters.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">Aucun compteur détecté dans ce fichier.</p>
+          ) : (
+            <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+              {preview.meters.map((m) => (
+                <label
+                  key={m.meter_code}
+                  className="flex cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-gray-50"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedCodes.has(m.meter_code)}
+                    onChange={() => onToggle(m.meter_code)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-geneva-700 focus:ring-geneva-500"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-gray-900">{m.meter_code}</span>
+                      {m.fluid_type && <span className="text-xs text-gray-400">{m.fluid_type}</span>}
+                      {m.already_in_base && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                          Déjà en base ({m.existing_row_count} ligne{m.existing_row_count > 1 ? "s" : ""})
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      {m.row_count} ligne{m.row_count > 1 ? "s" : ""} · {formatPeriod(m.period_start, m.period_end)}
+                      {m.building_code ? ` · ${m.building_code}` : ""}
+                    </p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={importing}
+            className="rounded-lg border border-gray-300 px-3.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Annuler
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={importing || selectedCodes.size === 0}
+            className="rounded-lg bg-geneva-700 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-geneva-800 disabled:opacity-50"
+          >
+            {importing ? "Import en cours…" : `Importer la sélection (${selectedCodes.size})`}
+          </button>
         </div>
       </div>
     </div>

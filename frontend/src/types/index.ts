@@ -22,6 +22,27 @@ export interface ImportBatchSummary {
   qualified_meter_count: number;
 }
 
+export interface ImportPreviewMeter {
+  meter_code: string;
+  building_code: string | null;
+  fluid_type: string | null;
+  role: string | null;
+  unit: string | null;
+  measurement_kind: string;
+  row_count: number;
+  period_start: string | null;
+  period_end: string | null;
+  already_in_base: boolean;
+  existing_row_count: number;
+}
+
+export interface ImportPreview {
+  meters: ImportPreviewMeter[];
+  warnings: string[];
+  exact_duplicate: boolean;
+  duplicate_of_name: string | null;
+}
+
 export interface MeterQualitySummary {
   meter_id: string;
   meter_code: string;

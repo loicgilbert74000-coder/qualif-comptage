@@ -53,16 +53,48 @@ async def create_import(
     files: list[UploadFile] = File(...),
     delimiter: str | None = None,
     decimal_separator: str = ",",
+    selected_meters: str | None = None,
     db: Session = Depends(get_db),
 ):
     """Upload one CSV file, or several at once to be treated as a single
-    'dossier' batch (matches the mock-up's two import cards)."""
+    'dossier' batch (matches the mock-up's two import cards).
+
+    `selected_meters`, when sent, is a JSON array of meter codes — the
+    subset the user kept checked on the import-preview panel. Left out (or
+    empty), every meter detected in the file(s) is imported, same as
+    before the preview panel existed."""
     payload = [(f.filename, await f.read()) for f in files]
+    meter_filter: set[str] | None = None
+    if selected_meters:
+        try:
+            meter_filter = set(json.loads(selected_meters))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "Paramètre selected_meters invalide.") from exc
     try:
-        batch = import_service.ingest_files(db, payload, decimal_separator=decimal_separator, delimiter=delimiter)
+        batch = import_service.ingest_files(
+            db, payload, decimal_separator=decimal_separator, delimiter=delimiter, selected_meter_codes=meter_filter
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return _batch_summary(db, batch)
+
+
+@router.post("/preview")
+async def preview_import(
+    files: list[UploadFile] = File(...),
+    delimiter: str | None = None,
+    decimal_separator: str = ",",
+    db: Session = Depends(get_db),
+):
+    """Parse the uploaded file(s) without persisting anything, so the
+    import screen can show the user what's inside — one entry per detected
+    meter, flagged when it already has overlapping data in the database —
+    before they confirm what to actually import via `create_import`."""
+    payload = [(f.filename, await f.read()) for f in files]
+    try:
+        return import_service.preview_import(db, payload, delimiter=delimiter, decimal_separator=decimal_separator)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("", response_model=list[ImportBatchSummary])
