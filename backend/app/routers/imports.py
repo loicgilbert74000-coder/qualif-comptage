@@ -4,7 +4,7 @@ import json
 import re
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -53,7 +53,7 @@ async def create_import(
     files: list[UploadFile] = File(...),
     delimiter: str | None = None,
     decimal_separator: str = ",",
-    selected_meters: str | None = None,
+    selected_meters: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     """Upload one CSV file, or several at once to be treated as a single
