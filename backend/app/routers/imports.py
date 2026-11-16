@@ -54,6 +54,7 @@ async def create_import(
     delimiter: str | None = None,
     decimal_separator: str = ",",
     selected_meters: str | None = Form(None),
+    column_mapping: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     """Upload one CSV file, or several at once to be treated as a single
@@ -62,7 +63,12 @@ async def create_import(
     `selected_meters`, when sent, is a JSON array of meter codes — the
     subset the user kept checked on the import-preview panel. Left out (or
     empty), every meter detected in the file(s) is imported, same as
-    before the preview panel existed."""
+    before the preview panel existed.
+
+    `column_mapping`, when sent, is a JSON object (logical field -> column
+    name in the file) — the manual mapping the user filled in when the
+    format wasn't recognised automatically (see `/preview`'s
+    `needs_mapping`/`unmapped_files`)."""
     payload = [(f.filename, await f.read()) for f in files]
     meter_filter: set[str] | None = None
     if selected_meters:
@@ -70,9 +76,16 @@ async def create_import(
             meter_filter = set(json.loads(selected_meters))
         except (TypeError, ValueError) as exc:
             raise HTTPException(400, "Paramètre selected_meters invalide.") from exc
+    mapping: dict | None = None
+    if column_mapping:
+        try:
+            mapping = json.loads(column_mapping)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "Paramètre column_mapping invalide.") from exc
     try:
         batch = import_service.ingest_files(
-            db, payload, decimal_separator=decimal_separator, delimiter=delimiter, selected_meter_codes=meter_filter
+            db, payload, decimal_separator=decimal_separator, delimiter=delimiter,
+            selected_meter_codes=meter_filter, column_mapping=mapping,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -84,15 +97,31 @@ async def preview_import(
     files: list[UploadFile] = File(...),
     delimiter: str | None = None,
     decimal_separator: str = ",",
+    column_mapping: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     """Parse the uploaded file(s) without persisting anything, so the
     import screen can show the user what's inside — one entry per detected
     meter, flagged when it already has overlapping data in the database —
-    before they confirm what to actually import via `create_import`."""
+    before they confirm what to actually import via `create_import`.
+
+    When the file's format isn't recognised (no `column_mapping` given and
+    the mandatory horodatage/valeur columns can't be auto-detected), the
+    result's `needs_mapping` is true and `unmapped_files` lists each such
+    file's own raw columns plus whatever partial mapping was guessed, so
+    the import screen can ask the user to complete it and call this same
+    endpoint again with that mapping."""
     payload = [(f.filename, await f.read()) for f in files]
+    mapping: dict | None = None
+    if column_mapping:
+        try:
+            mapping = json.loads(column_mapping)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "Paramètre column_mapping invalide.") from exc
     try:
-        return import_service.preview_import(db, payload, delimiter=delimiter, decimal_separator=decimal_separator)
+        return import_service.preview_import(
+            db, payload, delimiter=delimiter, decimal_separator=decimal_separator, column_mapping=mapping
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -221,6 +250,18 @@ def resolve_anomaly(batch_id: UUID, anomaly_id: UUID, payload: ResolveAnomalyIn,
         raise HTTPException(400, str(exc)) from exc
     meter = db.query(Meter).get(anomaly.meter_id)
     return _anomaly_out(anomaly, meter)
+
+
+@router.post("/{batch_id}/anomalies/resolve-all")
+def resolve_all_anomalies(batch_id: UUID, db: Session = Depends(get_db)):
+    """Valide en masse, "en l'état", toutes les zones encore en attente de
+    ce dossier — l'équivalent d'un clic sur "Valider en l'état" répété sur
+    chacune, en un seul appel."""
+    batch = _get_batch_or_404(db, batch_id)
+    try:
+        return import_service.resolve_all_pending(db, batch)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("/{batch_id}/anomalies/{anomaly_id}/correction-options", response_model=list[CorrectionOption])

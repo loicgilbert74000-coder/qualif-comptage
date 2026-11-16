@@ -176,6 +176,29 @@ def _parse_values(col: pd.Series, dec: str) -> pd.Series:
 
 
 
+def sniff_csv_columns(
+    content: bytes, filename: str, delimiter: str | None = None
+) -> dict:
+    """Read just the header row (and the auto-detected mapping, whatever it
+    managed to guess) of a CSV whose format isn't recognised well enough
+    to parse outright — used to build the manual column-mapping form the
+    import screen shows when `parse_csv_bytes()` can't find the mandatory
+    "horodatage"/"valeur" fields on its own."""
+    text = content.decode("utf-8-sig", errors="replace")
+    sample = "\n".join(text.splitlines()[:5])
+    delim = delimiter or detect_delimiter(sample)
+    try:
+        df = pd.read_csv(io.StringIO(text), sep=delim, dtype=str, keep_default_na=False, nrows=5)
+    except Exception as exc:  # pragma: no cover - genuinely unreadable file
+        raise ValueError(f"Impossible de lire {filename} comme un fichier CSV : {exc}") from exc
+    columns = [c.strip() for c in df.columns]
+    return {
+        "columns": columns,
+        "detected_mapping": detect_column_mapping(columns),
+        "delimiter": delim,
+    }
+
+
 def parse_csv_bytes(
     content: bytes,
     filename: str,

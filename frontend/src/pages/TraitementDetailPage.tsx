@@ -145,6 +145,22 @@ export default function TraitementDetailPage() {
     }
   }
 
+  async function resolveAll() {
+    if (!batchId || pendingCount === 0) return;
+    if (!window.confirm(`Valider en l'état les ${pendingCount} zone(s) encore en attente de ce dossier ?`)) return;
+    setBusy("resolve-all");
+    setError(null);
+    try {
+      await api.resolveAllAnomalies(batchId);
+      await Promise.all([refresh(), loadSeries()]);
+      selectZone(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function saveMeter() {
     if (!batchId || !selectedMeterId) return;
     setBusy("finalize");
@@ -201,6 +217,7 @@ export default function TraitementDetailPage() {
   return (
     <div className="flex h-full flex-1 flex-col overflow-y-auto">
       {busy === "finalize" && <LoadingOverlay label="Qualification du compteur en cours…" />}
+      {busy === "resolve-all" && <LoadingOverlay label="Validation de toutes les zones en cours…" />}
 
       <TopBar
         title={summary.name}
@@ -241,6 +258,16 @@ export default function TraitementDetailPage() {
           <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
             {savedMeterCount} / {totalMeterCount} compteur(s) qualifié(s)
           </span>
+          {pendingCount > 0 && (
+            <button
+              type="button"
+              onClick={resolveAll}
+              disabled={busy !== null}
+              className="rounded-full border border-geneva-700 px-3 py-1 text-xs font-medium text-geneva-700 hover:bg-geneva-50 disabled:opacity-50"
+            >
+              {busy === "resolve-all" ? "Validation…" : `Valider toutes les zones en l'état (${pendingCount})`}
+            </button>
+          )}
         </div>
 
         {metersWithPending.length > 0 && (

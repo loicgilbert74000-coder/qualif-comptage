@@ -37,16 +37,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   listImports: () => request<ImportBatchSummary[]>("/imports"),
 
-  uploadImport: async (files: File[], selectedMeters?: string[]): Promise<ImportBatchSummary> => {
+  uploadImport: async (
+    files: File[],
+    selectedMeters?: string[],
+    columnMapping?: Record<string, string>
+  ): Promise<ImportBatchSummary> => {
     const form = new FormData();
     files.forEach((f) => form.append("files", f));
     if (selectedMeters) form.append("selected_meters", JSON.stringify(selectedMeters));
+    if (columnMapping) form.append("column_mapping", JSON.stringify(columnMapping));
     return request<ImportBatchSummary>("/imports", { method: "POST", body: form });
   },
 
-  previewImport: async (files: File[]): Promise<ImportPreview> => {
+  previewImport: async (files: File[], columnMapping?: Record<string, string>): Promise<ImportPreview> => {
     const form = new FormData();
     files.forEach((f) => form.append("files", f));
+    if (columnMapping) form.append("column_mapping", JSON.stringify(columnMapping));
     return request<ImportPreview>("/imports/preview", { method: "POST", body: form });
   },
 
@@ -64,6 +70,9 @@ export const api = {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ resolution, method: method ?? null, comment: comment ?? null }),
   }),
+
+  resolveAllAnomalies: (batchId: string) =>
+    request<{ resolved_count: number }>(`/imports/${batchId}/anomalies/resolve-all`, { method: "POST" }),
 
   getCorrectionOptions: (batchId: string, anomalyId: string) =>
     request<CorrectionOption[]>(`/imports/${batchId}/anomalies/${anomalyId}/correction-options`),

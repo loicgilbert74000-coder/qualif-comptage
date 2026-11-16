@@ -36,11 +36,19 @@ export interface ImportPreviewMeter {
   existing_row_count: number;
 }
 
+export interface UnmappedFileInfo {
+  columns: string[];
+  detected_mapping: Record<string, string>;
+  delimiter: string;
+}
+
 export interface ImportPreview {
   meters: ImportPreviewMeter[];
   warnings: string[];
   exact_duplicate: boolean;
   duplicate_of_name: string | null;
+  needs_mapping: boolean;
+  unmapped_files: Record<string, UnmappedFileInfo>;
 }
 
 export interface MeterQualitySummary {

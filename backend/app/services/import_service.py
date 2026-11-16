@@ -28,7 +28,7 @@ from app.models import (
     OrgSettings,
     MeterValidation,
 )
-from app.services.csv_parser import parse_csv_bytes, ParseResult
+from app.services.csv_parser import parse_csv_bytes, sniff_csv_columns, ParseResult
 from app.services.quality_engine import analyze_series, batch_quality_score, MeterQualityReport, infer_granularity, GRANULARITIES
 from app.services.reconstruction_engine import reconstruct_series
 from app.services.site_reference import lookup_site_name
@@ -225,10 +225,23 @@ def preview_import(
     # files (e.g. one per month), and the preview should show it as the
     # one meter it is, not once per file.
     aggregated: dict[str, dict] = {}
+    # Files whose format couldn't be auto-recognised (missing the mandatory
+    # horodatage/valeur columns) — surfaced so the import screen can offer
+    # a manual column-mapping form instead of just failing outright. Once
+    # the caller supplies an explicit `column_mapping`, a file that still
+    # fails to parse with it is a real error and is raised normally rather
+    # than silently added here again.
+    unmapped_files: dict[str, dict] = {}
     for filename, content in files:
-        result: ParseResult = parse_csv_bytes(
-            content, filename, column_mapping=column_mapping, delimiter=delimiter, decimal_separator=decimal_separator
-        )
+        try:
+            result: ParseResult = parse_csv_bytes(
+                content, filename, column_mapping=column_mapping, delimiter=delimiter, decimal_separator=decimal_separator
+            )
+        except ValueError:
+            if column_mapping:
+                raise
+            unmapped_files[filename] = sniff_csv_columns(content, filename, delimiter=delimiter)
+            continue
         warnings.extend(result.warnings)
         for s in result.series:
             if s.rows.empty:
@@ -290,6 +303,8 @@ def preview_import(
         "warnings": warnings,
         "exact_duplicate": duplicate_of is not None,
         "duplicate_of_name": duplicate_of.name if duplicate_of is not None else None,
+        "needs_mapping": bool(unmapped_files),
+        "unmapped_files": unmapped_files,
     }
 
 
@@ -1059,8 +1074,10 @@ def resolve_anomaly(
     comment = (comment or "").strip()
     if len(comment) > 1000:
         raise ValueError("Le commentaire ne peut pas dépasser 1 000 caractères.")
-    if resolution_enum == AnomalyResolution.VALIDEE and not comment:
-        raise ValueError("Un commentaire est obligatoire pour valider l’anomalie en l’état.")
+    # A comment is welcome (kept below, in the processing history) but was
+    # never meant to be mandatory — the UI never offered a field for it,
+    # so requiring one here only blocked every "valider en l'état" click
+    # with an error the person had no way to act on.
 
     selected_option = None
     if resolution_enum == AnomalyResolution.CORRIGEE:
@@ -1129,6 +1146,25 @@ def resolve_anomaly(
     db.commit()
     db.refresh(anomaly)
     return stats
+
+
+def resolve_all_pending(db: Session, batch: ImportBatch) -> dict:
+    """"Valider toutes les anomalies en masse en l'état" — the same outcome
+    as clicking "Valider en l'état" on every still-pending zone of this
+    dossier, one call instead of one click each. Useful whenever most
+    flagged zones turn out to be a legitimate pattern rather than a real
+    data problem (e.g. a production meter's negative convention recurring
+    all month) and reviewing each one individually adds nothing. Only
+    touches zones still "en_attente" — anything already validated or
+    corrected is left as it is."""
+    pending = (
+        db.query(Anomaly)
+        .filter(Anomaly.import_batch_id == batch.id, Anomaly.resolution == AnomalyResolution.EN_ATTENTE)
+        .all()
+    )
+    for anomaly in pending:
+        resolve_anomaly(db, batch, anomaly, "validee")
+    return {"resolved_count": len(pending)}
 
 
 def reject_batch(db: Session, batch: ImportBatch) -> ImportBatch:

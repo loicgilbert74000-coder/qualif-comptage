@@ -8,7 +8,7 @@ import ProgressBar from "../components/ProgressBar";
 import LoadingOverlay from "../components/LoadingOverlay";
 import DetailedAnalysis from "../components/DetailedAnalysis";
 import { api } from "../api/client";
-import type { ImportBatchSummary, ImportBatchDetail, ImportPreview } from "../types";
+import type { ImportBatchSummary, ImportBatchDetail, ImportPreview, UnmappedFileInfo } from "../types";
 
 export default function QualificationPage() {
   const [imports, setImports] = useState<ImportBatchSummary[]>([]);
@@ -22,6 +22,10 @@ export default function QualificationPage() {
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
+  // The manual column mapping, once confirmed on the mapping form — kept
+  // so the final import call reuses exactly what made the preview work,
+  // instead of re-guessing.
+  const [columnMapping, setColumnMapping] = useState<Record<string, string> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +79,7 @@ export default function QualificationPage() {
     setPendingFiles(null);
     setPreview(null);
     setSelectedCodes(new Set());
+    setColumnMapping(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (folderInputRef.current) folderInputRef.current.value = "";
   }
@@ -88,12 +93,28 @@ export default function QualificationPage() {
     });
   }
 
+  async function submitMapping(mapping: Record<string, string>) {
+    if (!pendingFiles) return;
+    setPreviewing(true);
+    setError(null);
+    try {
+      const result = await api.previewImport(pendingFiles, mapping);
+      setPreview(result);
+      setColumnMapping(mapping);
+      setSelectedCodes(new Set(result.meters.map((m) => m.meter_code)));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
   async function confirmImport() {
     if (!pendingFiles) return;
     setUploading(true);
     setError(null);
     try {
-      const batch = await api.uploadImport(pendingFiles, Array.from(selectedCodes));
+      const batch = await api.uploadImport(pendingFiles, Array.from(selectedCodes), columnMapping ?? undefined);
       await refreshList();
       setActiveId(batch.id);
       cancelPreview();
@@ -138,7 +159,7 @@ export default function QualificationPage() {
       <StepIndicator current={detail ? 2 : 1} />
 
       {reanalyzing && <LoadingOverlay label="Réanalyse de tous les fichiers en cours…" />}
-      {previewing && <LoadingOverlay label="Lecture du fichier…" />}
+      {previewing && !preview && <LoadingOverlay label="Lecture du fichier…" />}
       {preview && pendingFiles && (
         <ImportPreviewModal
           preview={preview}
@@ -146,7 +167,9 @@ export default function QualificationPage() {
           onToggle={toggleMeter}
           onCancel={cancelPreview}
           onConfirm={confirmImport}
+          onSubmitMapping={submitMapping}
           importing={uploading}
+          mappingBusy={previewing}
         />
       )}
 
@@ -294,25 +317,145 @@ export default function QualificationPage() {
   );
 }
 
+// Logical fields the parser understands, in the order the mapping form
+// shows them. horodatage/valeur are mandatory — every other field is
+// optional and can be left unmapped.
+const MAPPING_FIELDS: { key: string; label: string; required: boolean; hint: string }[] = [
+  { key: "horodatage", label: "Horodatage (date/heure)", required: true, hint: "La colonne qui donne la date ou la date-heure du relevé." },
+  { key: "valeur", label: "Valeur relevée", required: true, hint: "La colonne contenant le relevé lui-même (index ou consommation)." },
+  { key: "id_compteur", label: "Identifiant du compteur", required: false, hint: "Si absente, tout le fichier est traité comme un seul compteur." },
+  { key: "unite", label: "Unité", required: false, hint: "kWh, m³, litre… Si absente, l'unité du compteur existant est utilisée." },
+  { key: "id_batiment", label: "Identifiant du bâtiment / site", required: false, hint: "" },
+  { key: "fluide", label: "Fluide", required: false, hint: "Électricité, gaz, eau, chaleur…" },
+  { key: "mesure", label: "Rôle / nature de la mesure", required: false, hint: "" },
+];
+
+function ColumnMappingForm({
+  filename,
+  info,
+  busy,
+  onSubmit,
+}: {
+  filename: string;
+  info: UnmappedFileInfo;
+  busy: boolean;
+  onSubmit: (mapping: Record<string, string>) => void;
+}) {
+  const [draft, setDraft] = useState<Record<string, string>>(() => ({ ...info.detected_mapping }));
+
+  const canSubmit = Boolean(draft.horodatage) && Boolean(draft.valeur);
+
+  return (
+    <div>
+      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        Le format de « {filename} » n'a pas été reconnu automatiquement. Indiquez ci-dessous à quoi correspond
+        chaque colonne du fichier — au moins l'horodatage et la valeur relevée sont nécessaires.
+      </div>
+      <p className="mb-2 text-xs text-gray-500">
+        Colonnes trouvées dans le fichier : <span className="font-medium text-gray-700">{info.columns.join(", ")}</span>
+      </p>
+      <div className="space-y-2.5">
+        {MAPPING_FIELDS.map((field) => (
+          <div key={field.key} className="flex items-center gap-3">
+            <label className="w-48 shrink-0 text-sm text-gray-700">
+              {field.label}
+              {field.required && <span className="text-red-500"> *</span>}
+            </label>
+            <select
+              value={draft[field.key] ?? ""}
+              onChange={(e) => setDraft((prev) => ({ ...prev, [field.key]: e.target.value }))}
+              className="flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-800"
+            >
+              {!field.required && <option value="">— Aucune —</option>}
+              {field.required && !draft[field.key] && <option value="">— Choisir —</option>}
+              {info.columns.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex justify-end">
+        <button
+          type="button"
+          disabled={!canSubmit || busy}
+          onClick={() => {
+            const mapping: Record<string, string> = {};
+            for (const field of MAPPING_FIELDS) {
+              if (draft[field.key]) mapping[field.key] = draft[field.key];
+            }
+            onSubmit(mapping);
+          }}
+          className="rounded-lg bg-geneva-700 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-geneva-800 disabled:opacity-50"
+        >
+          {busy ? "Lecture…" : "Valider ce mapping"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ImportPreviewModal({
   preview,
   selectedCodes,
   onToggle,
   onCancel,
   onConfirm,
+  onSubmitMapping,
   importing,
+  mappingBusy,
 }: {
   preview: ImportPreview;
   selectedCodes: Set<string>;
   onToggle: (code: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
+  onSubmitMapping: (mapping: Record<string, string>) => void;
   importing: boolean;
+  mappingBusy: boolean;
 }) {
   function formatPeriod(start: string | null, end: string | null) {
     if (!start || !end) return "—";
     const f = (d: string) => new Date(d).toLocaleDateString("fr-CH");
     return `${f(start)} - ${f(end)}`;
+  }
+
+  if (preview.needs_mapping) {
+    const [firstFilename, firstInfo] = Object.entries(preview.unmapped_files)[0];
+    const otherFilenames = Object.keys(preview.unmapped_files).slice(1);
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <div className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-xl">
+          <div className="border-b border-gray-200 px-5 py-4">
+            <h3 className="text-base font-semibold text-gray-900">Format non reconnu — mapping manuel</h3>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Indiquez à quoi correspond chaque colonne pour importer ce fichier malgré tout.
+            </p>
+          </div>
+          <div className="flex-1 overflow-y-auto px-5 py-3">
+            <ColumnMappingForm filename={firstFilename} info={firstInfo} busy={mappingBusy} onSubmit={onSubmitMapping} />
+            {otherFilenames.length > 0 && (
+              <p className="mt-3 text-xs text-amber-700">
+                Ce mapping sera aussi appliqué à : {otherFilenames.join(", ")}. Si leurs colonnes diffèrent,
+                importez-les séparément.
+              </p>
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={mappingBusy}
+              className="rounded-lg border border-gray-300 px-3.5 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
