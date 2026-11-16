@@ -29,7 +29,7 @@ from app.models import (
     MeterValidation,
 )
 from app.services.csv_parser import parse_csv_bytes, ParseResult
-from app.services.quality_engine import analyze_series, batch_quality_score, MeterQualityReport
+from app.services.quality_engine import analyze_series, batch_quality_score, MeterQualityReport, infer_granularity, GRANULARITIES
 from app.services.reconstruction_engine import reconstruct_series
 from app.services.site_reference import lookup_site_name
 
@@ -91,6 +91,95 @@ def _get_or_create_meter(db: Session, building: Building, parsed) -> Meter:
         if parsed.measurement_kind != "indéterminé":
             m.measurement_kind = parsed.measurement_kind
     return m
+
+
+DERIVED_METER_SUFFIX = "__CONSO"
+
+
+def _get_or_create_derived_meter(db: Session, index_meter: Meter) -> Meter:
+    """The consumption curve derived from one cumulative-index meter, kept
+    as its own Meter (linked back via parent_meter_id) rather than a second
+    kind of row on the index meter itself — this way it goes through the
+    exact same quality analysis, per-meter validation and export paths as
+    any other meter, with zero special-casing anywhere else in the app."""
+    code = f"{index_meter.code}{DERIVED_METER_SUFFIX}"
+    m = db.query(Meter).filter(Meter.code == code).one_or_none()
+    if m is None:
+        m = Meter(
+            building_id=index_meter.building_id,
+            code=code,
+            label=f"{index_meter.label} — consommation dérivée",
+            fluid_type=index_meter.fluid_type,
+            unit=index_meter.unit,
+            role="consommation_dérivée",
+            measurement_kind="consommation",
+            parent_meter_id=index_meter.id,
+            expected_frequency=index_meter.expected_frequency,
+        )
+        db.add(m)
+        db.flush()
+    return m
+
+
+def _generate_derived_consumption_series(db: Session, batch: ImportBatch, meter_codes: set[str]) -> None:
+    """For every 'index' (cumulative) meter this batch just wrote raw
+    readings for, derive a parallel consumption series — one point per
+    available step, equal to the difference between two consecutive raw
+    index values — and store it under its own child Meter. Purely
+    additive: the raw index readings created just above are never
+    modified, so both series stay available side by side (the raw index
+    for whoever needs it, the ready-to-use consumption curve for
+    everyone else), matching the "garder les deux" choice made for this
+    feature. Mutates `meter_codes` in place to add the derived meters, so
+    the caller's building/meter counts and the batch's own quality
+    analysis (which both run right after this) pick them up automatically
+    — a derived meter is qualified independently, exactly like any other
+    meter in the dossier."""
+    for code in list(meter_codes):
+        meter = db.query(Meter).filter(Meter.code == code).one_or_none()
+        if meter is None or meter.measurement_kind != "index":
+            continue
+
+        raw_points = (
+            db.query(Reading.timestamp, Reading.value)
+            .filter(Reading.meter_id == meter.id, Reading.import_batch_id == batch.id)
+            .order_by(Reading.timestamp)
+            .all()
+        )
+        points = [(ts, val) for ts, val in raw_points if val is not None]
+        if len(points) < 2:
+            continue
+
+        step = GRANULARITIES[infer_granularity(pd.Series([p[0] for p in points]))]
+        # A monthly step is a DateOffset (variable length), not a fixed
+        # Timedelta, so it can't be multiplied by 1.5 the way the other
+        # granularities can — comparing against it directly already
+        # tolerates the usual day-to-day variation in "one month".
+        max_gap = step if isinstance(step, pd.DateOffset) else step * 1.5
+
+        derived = _get_or_create_derived_meter(db, meter)
+        mappings: list[dict] = []
+        for (t0, v0), (t1, v1) in zip(points, points[1:]):
+            if (t1 - t0) > max_gap:
+                continue  # a gap wider than the normal step — no consumption value is guessable across it
+            delta = v1 - v0
+            if delta < 0:
+                continue  # index reset/replacement — already flagged as an anomaly on the raw series itself
+            mappings.append(
+                {
+                    "id": uuid.uuid4(),
+                    "meter_id": derived.id,
+                    "import_batch_id": batch.id,
+                    "timestamp": t1,
+                    "value": float(delta),
+                    "raw_value": float(delta),
+                    "unit": derived.unit,
+                    "quality": ReadingQuality.VALIDE,
+                }
+            )
+        if mappings:
+            db.bulk_insert_mappings(Reading, mappings)
+            meter_codes.add(derived.code)
 
 
 def _content_hash(files: list[tuple[str, bytes]]) -> str:
@@ -361,6 +450,8 @@ def ingest_files(
 
     if reading_mappings:
         db.bulk_insert_mappings(Reading, reading_mappings)
+        db.flush()
+        _generate_derived_consumption_series(db, batch, meters_seen)
 
     if column_mapping:
         batch.column_mapping = column_mapping
