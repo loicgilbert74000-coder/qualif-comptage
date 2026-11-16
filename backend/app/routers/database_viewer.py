@@ -8,11 +8,16 @@ rather than a generic table browser.
 """
 from __future__ import annotations
 
+import csv
+import io
+import json
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
+from sqlalchemy.orm import Query as SAQuery, Session
 
 from app.database import get_db
 from app.models import Base, Reading, Meter, Building, MeterStatus
@@ -46,6 +51,38 @@ def _from_utc_iso(iso: str) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=_UTC)
     return parsed.astimezone(_SOURCE_TZ).replace(tzinfo=None)
+
+
+def _apply_filters(
+    query: SAQuery,
+    *,
+    meter_code: str | None,
+    building: str | None,
+    fluid_type: str | None,
+    validity: str | None,
+    timestamp_from: str | None,
+    timestamp_to: str | None,
+) -> SAQuery:
+    """Shared by /readings and /export, so a reading matches the export
+    exactly when it matches the on-screen filtered table — the export is
+    meant to download exactly what the filters currently show, nothing more
+    or less."""
+    if meter_code:
+        query = query.filter(Meter.code == meter_code)
+    if building:
+        query = query.filter(Building.name == building)
+    if fluid_type:
+        query = query.filter(Meter.fluid_type == fluid_type)
+    if validity:
+        try:
+            query = query.filter(Meter.status == MeterStatus(validity))
+        except ValueError:
+            pass  # unknown value: ignored rather than erroring on a stale filter
+    if timestamp_from:
+        query = query.filter(Reading.timestamp >= _from_utc_iso(timestamp_from))
+    if timestamp_to:
+        query = query.filter(Reading.timestamp <= _from_utc_iso(timestamp_to))
+    return query
 
 
 def _row_out(reading: Reading, meter: Meter, building: Building) -> dict:
@@ -104,21 +141,10 @@ def list_readings(
         .join(Meter, Meter.id == Reading.meter_id)
         .join(Building, Building.id == Meter.building_id)
     )
-    if meter_code:
-        base_query = base_query.filter(Meter.code == meter_code)
-    if building:
-        base_query = base_query.filter(Building.name == building)
-    if fluid_type:
-        base_query = base_query.filter(Meter.fluid_type == fluid_type)
-    if validity:
-        try:
-            base_query = base_query.filter(Meter.status == MeterStatus(validity))
-        except ValueError:
-            pass  # unknown value: ignored rather than erroring on a stale filter
-    if timestamp_from:
-        base_query = base_query.filter(Reading.timestamp >= _from_utc_iso(timestamp_from))
-    if timestamp_to:
-        base_query = base_query.filter(Reading.timestamp <= _from_utc_iso(timestamp_to))
+    base_query = _apply_filters(
+        base_query, meter_code=meter_code, building=building, fluid_type=fluid_type,
+        validity=validity, timestamp_from=timestamp_from, timestamp_to=timestamp_to,
+    )
 
     total = base_query.count()
     rows = base_query.order_by(Reading.timestamp.desc(), Reading.id.desc()).offset(offset).limit(limit).all()
@@ -135,19 +161,97 @@ def list_readings(
 def list_filter_options(db: Session = Depends(get_db)):
     """Distinct values currently in the simplified view, used to populate
     each column's filter dropdown — so the choices offered always match
-    what's actually in the database, not a hardcoded list."""
-    meters = (
+    what's actually in the database, not a hardcoded list.
+
+    Joined through Reading on purpose: a Meter/Building row can outlive
+    every one of its readings (deleting a dossier removes its readings but
+    deliberately leaves the meters/buildings alone, in case another import
+    still references them — see delete_batch), and such a meter has nothing
+    to show in this view. Listing it as a filter choice would offer a
+    filter that always returns zero rows, which is what was happening."""
+    with_readings = db.query(Reading.meter_id).distinct().subquery()
+    meters_q = (
         db.query(Meter.code, Building.name)
         .join(Building, Building.id == Meter.building_id)
+        .join(with_readings, with_readings.c.meter_id == Meter.id)
         .distinct()
         .order_by(Meter.code)
-        .all()
     )
-    buildings = [b for (b,) in db.query(Building.name).distinct().order_by(Building.name).all()]
-    fluid_types = [f for (f,) in db.query(Meter.fluid_type).distinct().order_by(Meter.fluid_type).all()]
+    buildings_q = (
+        db.query(Building.name)
+        .join(Meter, Meter.building_id == Building.id)
+        .join(with_readings, with_readings.c.meter_id == Meter.id)
+        .distinct()
+        .order_by(Building.name)
+    )
+    fluids_q = (
+        db.query(Meter.fluid_type)
+        .join(with_readings, with_readings.c.meter_id == Meter.id)
+        .distinct()
+        .order_by(Meter.fluid_type)
+    )
     return {
-        "meter_codes": [m for m, _ in meters],
-        "buildings": buildings,
-        "fluid_types": fluid_types,
+        "meter_codes": [m for m, _ in meters_q.all()],
+        "buildings": [b for (b,) in buildings_q.all()],
+        "fluid_types": [f for (f,) in fluids_q.all()],
         "validities": [s.value for s in MeterStatus],
     }
+
+
+@router.get("/export")
+def export_readings(
+    format: str = Query("csv"),
+    meter_code: str | None = Query(None),
+    building: str | None = Query(None),
+    fluid_type: str | None = Query(None),
+    validity: str | None = Query(None),
+    timestamp_from: str | None = Query(None),
+    timestamp_to: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Exports the simplified reading view, filtered exactly like the
+    on-screen table — by compteur, bâtiment, fluide, validité and/or
+    période — rather than being tied to one import dossier. Unlike
+    /imports/{batch_id}/export (which only ever covers one dossier's
+    already-qualified meters), this lets someone export any slice of
+    what's actually in the database today."""
+    if format not in ("csv", "json"):
+        raise HTTPException(400, "Format d'export invalide : 'csv' ou 'json' attendu.")
+
+    base_query = (
+        db.query(Reading, Meter, Building)
+        .join(Meter, Meter.id == Reading.meter_id)
+        .join(Building, Building.id == Meter.building_id)
+    )
+    base_query = _apply_filters(
+        base_query, meter_code=meter_code, building=building, fluid_type=fluid_type,
+        validity=validity, timestamp_from=timestamp_from, timestamp_to=timestamp_to,
+    )
+    rows_raw = base_query.order_by(Building.name, Meter.code, Reading.timestamp).all()
+    if not rows_raw:
+        raise HTTPException(400, "Aucun relevé ne correspond à ces filtres.")
+    rows = [_row_out(r, m, b) for r, m, b in rows_raw]
+
+    name_bits = [b for b in (meter_code, building, fluid_type) if b] or ["export"]
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", "_".join(name_bits)).strip("_") or "export"
+
+    if format == "json":
+        return Response(
+            content=json.dumps(rows, ensure_ascii=False, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}.json"'},
+        )
+
+    fieldnames = [
+        "meter_code", "building", "fluid_type", "unit", "timestamp_utc",
+        "raw_value", "corrected_value", "reliability_index", "validity",
+    ]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, delimiter=";", extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}.csv"'},
+    )

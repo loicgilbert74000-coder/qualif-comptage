@@ -224,3 +224,5 @@ export interface ReadingFilterOptions {
   fluid_types: string[];
   validities: string[];
 }
+
+export type ExportFormat = "csv" | "json";

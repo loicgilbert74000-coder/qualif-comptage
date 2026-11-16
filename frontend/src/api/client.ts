@@ -15,6 +15,7 @@ import type {
   SimplifiedReadingsPage,
   ReadingFilters,
   ReadingFilterOptions,
+  ExportFormat,
 } from "../types";
 
 const BASE = "/api";
@@ -140,6 +141,31 @@ export const api = {
   },
 
   getReadingFilterOptions: () => request<ReadingFilterOptions>("/db/readings/filter-options"),
+
+  exportReadings: async (
+    filters: ReadingFilters,
+    format: ExportFormat
+  ): Promise<{ blob: Blob; filename: string }> => {
+    const params = new URLSearchParams({ format });
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    const res = await fetch(`${BASE}/db/export?${params.toString()}`);
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        detail = body.detail || detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(detail);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = /filename="([^"]+)"/.exec(disposition);
+    return { blob, filename: match?.[1] ?? `export.${format}` };
+  },
 
   wipeDatabase: () => request<{ status: string }>("/db/wipe", { method: "POST" }),
 };
