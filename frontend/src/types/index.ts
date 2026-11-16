@@ -208,3 +208,19 @@ export interface SimplifiedReadingsPage {
   limit: number;
   offset: number;
 }
+
+export interface ReadingFilters {
+  meter_code?: string;
+  building?: string;
+  fluid_type?: string;
+  validity?: string;
+  timestamp_from?: string;
+  timestamp_to?: string;
+}
+
+export interface ReadingFilterOptions {
+  meter_codes: string[];
+  buildings: string[];
+  fluid_types: string[];
+  validities: string[];
+}

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Base, Reading, Meter, Building
+from app.models import Base, Reading, Meter, Building, MeterStatus
 
 router = APIRouter(prefix="/api/db", tags=["database"])
 
@@ -36,6 +36,16 @@ _UTC = ZoneInfo("UTC")
 
 def _to_utc_iso(ts: datetime) -> str:
     return ts.replace(tzinfo=_SOURCE_TZ).astimezone(_UTC).isoformat()
+
+
+def _from_utc_iso(iso: str) -> datetime:
+    """Inverse of _to_utc_iso: a UTC boundary from the frontend's date filter,
+    converted back to the naive Europe/Zurich time Reading.timestamp is
+    stored in, so the comparison lines up with what's actually in the column."""
+    parsed = datetime.fromisoformat(iso)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_UTC)
+    return parsed.astimezone(_SOURCE_TZ).replace(tzinfo=None)
 
 
 def _row_out(reading: Reading, meter: Meter, building: Building) -> dict:
@@ -76,16 +86,40 @@ def wipe_database(db: Session = Depends(get_db)):
 def list_readings(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    meter_code: str | None = Query(None),
+    building: str | None = Query(None),
+    fluid_type: str | None = Query(None),
+    validity: str | None = Query(None),
+    timestamp_from: str | None = Query(None, description="Borne inférieure, ISO, en UTC."),
+    timestamp_to: str | None = Query(None, description="Borne supérieure, ISO, en UTC."),
     db: Session = Depends(get_db),
 ):
     """One page of the simplified reading view, newest first. Always
     driven by LIMIT/OFFSET in the database — never loads the whole table
-    into memory, however big it gets."""
+    into memory, however big it gets. Every filter is applied in the
+    database query itself, before LIMIT/OFFSET, so it works correctly
+    across pages rather than only filtering the current page."""
     base_query = (
         db.query(Reading, Meter, Building)
         .join(Meter, Meter.id == Reading.meter_id)
         .join(Building, Building.id == Meter.building_id)
     )
+    if meter_code:
+        base_query = base_query.filter(Meter.code == meter_code)
+    if building:
+        base_query = base_query.filter(Building.name == building)
+    if fluid_type:
+        base_query = base_query.filter(Meter.fluid_type == fluid_type)
+    if validity:
+        try:
+            base_query = base_query.filter(Meter.status == MeterStatus(validity))
+        except ValueError:
+            pass  # unknown value: ignored rather than erroring on a stale filter
+    if timestamp_from:
+        base_query = base_query.filter(Reading.timestamp >= _from_utc_iso(timestamp_from))
+    if timestamp_to:
+        base_query = base_query.filter(Reading.timestamp <= _from_utc_iso(timestamp_to))
+
     total = base_query.count()
     rows = base_query.order_by(Reading.timestamp.desc(), Reading.id.desc()).offset(offset).limit(limit).all()
 
@@ -94,4 +128,26 @@ def list_readings(
         "total": total,
         "limit": limit,
         "offset": offset,
+    }
+
+
+@router.get("/readings/filter-options")
+def list_filter_options(db: Session = Depends(get_db)):
+    """Distinct values currently in the simplified view, used to populate
+    each column's filter dropdown — so the choices offered always match
+    what's actually in the database, not a hardcoded list."""
+    meters = (
+        db.query(Meter.code, Building.name)
+        .join(Building, Building.id == Meter.building_id)
+        .distinct()
+        .order_by(Meter.code)
+        .all()
+    )
+    buildings = [b for (b,) in db.query(Building.name).distinct().order_by(Building.name).all()]
+    fluid_types = [f for (f,) in db.query(Meter.fluid_type).distinct().order_by(Meter.fluid_type).all()]
+    return {
+        "meter_codes": [m for m, _ in meters],
+        "buildings": buildings,
+        "fluid_types": fluid_types,
+        "validities": [s.value for s in MeterStatus],
     }

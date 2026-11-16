@@ -2,14 +2,17 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import TopBar from "../components/TopBar";
 import { api } from "../api/client";
-import type { SimplifiedReadingsPage } from "../types";
+import type { SimplifiedReadingsPage, ReadingFilters, ReadingFilterOptions } from "../types";
 
 const PAGE_SIZE = 50;
+const EMPTY_FILTERS: ReadingFilters = {};
 
 // A deliberately simple, read-only view: one flat table of exactly what a
 // non-technical user needs to check a reading — compteur, bâtiment,
 // horodatage (UTC), valeurs brute/corrigée, indice de fiabilité et
-// validité — rather than the app's raw internal tables.
+// validité — rather than the app's raw internal tables. Each column can be
+// filtered; filtering happens in the database query itself (see the API
+// client), not on the current page only, so it stays correct across pages.
 export default function DatabasePage() {
   const [data, setData] = useState<SimplifiedReadingsPage | null>(null);
   const [offset, setOffset] = useState(0);
@@ -17,22 +20,45 @@ export default function DatabasePage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmingWipe, setConfirmingWipe] = useState(false);
   const [wiping, setWiping] = useState(false);
+  const [filters, setFilters] = useState<ReadingFilters>(EMPTY_FILTERS);
+  const [filterOptions, setFilterOptions] = useState<ReadingFilterOptions | null>(null);
+
+  useEffect(() => {
+    api.getReadingFilterOptions().then(setFilterOptions).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoading(true);
     setError(null);
     api
-      .getReadings(PAGE_SIZE, offset)
+      .getReadings(PAGE_SIZE, offset, filters)
       .then(setData)
       .catch((e) => setError((e as Error).message || "Chargement impossible."))
       .finally(() => setLoading(false));
-  }, [offset]);
+  }, [offset, filters]);
+
+  function updateFilter(key: keyof ReadingFilters, value: string) {
+    setOffset(0);
+    setFilters((prev) => {
+      const next = { ...prev, [key]: value };
+      if (!value) delete next[key];
+      return next;
+    });
+  }
+
+  function resetFilters() {
+    setOffset(0);
+    setFilters(EMPTY_FILTERS);
+  }
 
   function refreshAll() {
     setData(null);
     setOffset(0);
-    api.getReadings(PAGE_SIZE, 0).then(setData).catch(() => {});
+    api.getReadings(PAGE_SIZE, 0, filters).then(setData).catch(() => {});
+    api.getReadingFilterOptions().then(setFilterOptions).catch(() => {});
   }
+
+  const activeFilterCount = Object.keys(filters).length;
 
   function wipeDatabase() {
     setWiping(true);
@@ -90,6 +116,17 @@ export default function DatabasePage() {
 
         {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
 
+        {activeFilterCount > 0 && (
+          <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
+            <span>
+              {activeFilterCount} filtre{activeFilterCount > 1 ? "s" : ""} actif{activeFilterCount > 1 ? "s" : ""}
+            </span>
+            <button type="button" onClick={resetFilters} className="font-medium text-geneva-700 hover:underline">
+              Réinitialiser les filtres
+            </button>
+          </div>
+        )}
+
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -104,6 +141,78 @@ export default function DatabasePage() {
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Unité</th>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Indice de fiabilité</th>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Validité</th>
+                </tr>
+                <tr className="border-t border-gray-200 bg-white">
+                  <th className="px-3 py-1.5 font-normal">
+                    <select
+                      value={filters.meter_code ?? ""}
+                      onChange={(e) => updateFilter("meter_code", e.target.value)}
+                      className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs text-gray-700"
+                    >
+                      <option value="">Tous</option>
+                      {filterOptions?.meter_codes.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </th>
+                  <th className="px-3 py-1.5 font-normal">
+                    <select
+                      value={filters.building ?? ""}
+                      onChange={(e) => updateFilter("building", e.target.value)}
+                      className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs text-gray-700"
+                    >
+                      <option value="">Tous</option>
+                      {filterOptions?.buildings.map((b) => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                  </th>
+                  <th className="px-3 py-1.5 font-normal">
+                    <select
+                      value={filters.fluid_type ?? ""}
+                      onChange={(e) => updateFilter("fluid_type", e.target.value)}
+                      className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs text-gray-700"
+                    >
+                      <option value="">Tous</option>
+                      {filterOptions?.fluid_types.map((f) => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </th>
+                  <th className="px-3 py-1.5 font-normal">
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="date"
+                        value={filters.timestamp_from?.slice(0, 10) ?? ""}
+                        onChange={(e) => updateFilter("timestamp_from", e.target.value ? `${e.target.value}T00:00:00Z` : "")}
+                        className="w-full rounded border border-gray-200 px-1 py-1 text-xs text-gray-700"
+                        title="Depuis (UTC)"
+                      />
+                      <input
+                        type="date"
+                        value={filters.timestamp_to?.slice(0, 10) ?? ""}
+                        onChange={(e) => updateFilter("timestamp_to", e.target.value ? `${e.target.value}T23:59:59Z` : "")}
+                        className="w-full rounded border border-gray-200 px-1 py-1 text-xs text-gray-700"
+                        title="Jusqu'à (UTC)"
+                      />
+                    </div>
+                  </th>
+                  <th className="px-3 py-1.5" />
+                  <th className="px-3 py-1.5" />
+                  <th className="px-3 py-1.5" />
+                  <th className="px-3 py-1.5" />
+                  <th className="px-3 py-1.5 font-normal">
+                    <select
+                      value={filters.validity ?? ""}
+                      onChange={(e) => updateFilter("validity", e.target.value)}
+                      className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs text-gray-700"
+                    >
+                      <option value="">Toutes</option>
+                      {filterOptions?.validities.map((v) => (
+                        <option key={v} value={v}>{VALIDITY_LABEL[v] ?? v}</option>
+                      ))}
+                    </select>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">

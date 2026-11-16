@@ -13,6 +13,8 @@ import type {
   Building,
   HistoryEntry,
   SimplifiedReadingsPage,
+  ReadingFilters,
+  ReadingFilterOptions,
 } from "../types";
 
 const BASE = "/api";
@@ -127,8 +129,17 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  getReadings: (limit: number, offset: number) =>
-    request<SimplifiedReadingsPage>(`/db/readings?limit=${limit}&offset=${offset}`),
+  getReadings: (limit: number, offset: number, filters?: ReadingFilters) => {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+      });
+    }
+    return request<SimplifiedReadingsPage>(`/db/readings?${params.toString()}`);
+  },
+
+  getReadingFilterOptions: () => request<ReadingFilterOptions>("/db/readings/filter-options"),
 
   wipeDatabase: () => request<{ status: string }>("/db/wipe", { method: "POST" }),
 };
