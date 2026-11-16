@@ -26,6 +26,19 @@ from pathlib import Path
 APP_PORT = 8743
 APP_TITLE = "Qualification des données de comptage"
 
+# A --windowed/--noconsole Windows build has no console, so sys.stdout and
+# sys.stderr are None — not a stream that silently discards writes, but the
+# absence of one. uvicorn (and other libraries) write their startup/access
+# logs to sys.stderr by default; the very first such write raises
+# AttributeError ("'NoneType' object has no attribute 'write'"), which
+# kills the server thread before it ever binds the port. The window then
+# opens anyway and shows "ERR_CONNECTION_REFUSED", with nothing printed
+# anywhere to explain why. Must run before uvicorn/app are imported.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 
 def resource_path(relative: str) -> Path:
     """Path to a bundled resource, whether running frozen (PyInstaller
