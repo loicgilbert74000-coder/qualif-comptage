@@ -17,6 +17,8 @@ export default function DatabasePage() {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingWipe, setConfirmingWipe] = useState(false);
+  const [wiping, setWiping] = useState(false);
 
   useEffect(() => {
     api
@@ -45,6 +47,24 @@ export default function DatabasePage() {
     setData(null);
   }
 
+  function refreshAll() {
+    setData(null);
+    setOffset(0);
+    api.listDbTables().then(setTables).catch(() => {});
+  }
+
+  function wipeDatabase() {
+    setWiping(true);
+    api
+      .wipeDatabase()
+      .then(() => {
+        setConfirmingWipe(false);
+        refreshAll();
+      })
+      .catch((e) => setError((e as Error).message || "La suppression a échoué."))
+      .finally(() => setWiping(false));
+  }
+
   const from = data && data.total > 0 ? data.offset + 1 : 0;
   const to = data ? Math.min(data.offset + data.rows.length, data.total) : 0;
 
@@ -55,23 +75,55 @@ export default function DatabasePage() {
         subtitle="Consultation brute des tables, en lecture seule — à usage technique uniquement."
       />
       <div className="flex-1 px-8 pb-10 pt-6">
-        <div className="mb-4 flex flex-wrap gap-2">
-          {tables.map((t) => (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
+            {tables.map((t) => (
+              <button
+                key={t.name}
+                type="button"
+                onClick={() => selectTable(t.name)}
+                className={clsx(
+                  "rounded-full border px-3.5 py-1.5 text-xs font-medium",
+                  selected === t.name
+                    ? "border-geneva-700 bg-geneva-50 text-geneva-800"
+                    : "border-gray-300 text-gray-600 hover:bg-gray-50"
+                )}
+              >
+                {tableLabel(t.name)}
+                <span className="ml-1.5 text-gray-400">{t.row_count}</span>
+              </button>
+            ))}
+          </div>
+
+          {!confirmingWipe ? (
             <button
-              key={t.name}
               type="button"
-              onClick={() => selectTable(t.name)}
-              className={clsx(
-                "rounded-full border px-3.5 py-1.5 text-xs font-medium",
-                selected === t.name
-                  ? "border-geneva-700 bg-geneva-50 text-geneva-800"
-                  : "border-gray-300 text-gray-600 hover:bg-gray-50"
-              )}
+              onClick={() => setConfirmingWipe(true)}
+              className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
             >
-              {t.name}
-              <span className="ml-1.5 text-gray-400">{t.row_count}</span>
+              Vider la base de données
             </button>
-          ))}
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
+              <span>Supprimer toutes les données, sans retour en arrière possible ?</span>
+              <button
+                type="button"
+                disabled={wiping}
+                onClick={wipeDatabase}
+                className="rounded-md bg-red-600 px-2.5 py-1 font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {wiping ? "Suppression…" : "Confirmer"}
+              </button>
+              <button
+                type="button"
+                disabled={wiping}
+                onClick={() => setConfirmingWipe(false)}
+                className="rounded-md border border-red-300 px-2.5 py-1 font-medium text-red-700 hover:bg-red-100"
+              >
+                Annuler
+              </button>
+            </div>
+          )}
         </div>
 
         {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
@@ -83,7 +135,7 @@ export default function DatabasePage() {
                 <tr>
                   {(data?.columns ?? []).map((c) => (
                     <th key={c} className="whitespace-nowrap px-3 py-2 font-medium">
-                      {c}
+                      {columnLabel(c)}
                     </th>
                   ))}
                 </tr>
@@ -163,4 +215,88 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 function shortenForDisplay(value: string): string {
   if (UUID_RE.test(value)) return value.slice(0, 8) + "…";
   return value;
+}
+
+const TABLE_LABELS: Record<string, string> = {
+  anomalies: "Anomalies",
+  buildings: "Bâtiments",
+  import_batches: "Imports",
+  meter_validations: "Validations de compteurs",
+  meters: "Compteurs",
+  org_settings: "Paramètres",
+  processing_history: "Historique des traitements",
+  readings: "Relevés",
+};
+
+function tableLabel(name: string): string {
+  return TABLE_LABELS[name] ?? name;
+}
+
+const COLUMN_LABELS: Record<string, string> = {
+  id: "Identifiant",
+  import_batch_id: "Import",
+  meter_id: "Compteur",
+  type: "Type",
+  subtype: "Sous-type",
+  period_start: "Début de période",
+  period_end: "Fin de période",
+  description: "Description",
+  deviation_pct: "Écart (%)",
+  resolution: "Résolution",
+  code: "Code",
+  name: "Nom",
+  address: "Adresse",
+  typology: "Typologie",
+  surface_m2: "Surface (m²)",
+  action: "Action",
+  performed_at: "Effectué le",
+  reconstruction_method: "Méthode de reconstruction",
+  stats: "Statistiques",
+  kind: "Type d'import",
+  file_count: "Nombre de fichiers",
+  storage_path: "Chemin de stockage",
+  column_mapping: "Correspondance des colonnes",
+  delimiter: "Séparateur",
+  decimal_separator: "Séparateur décimal",
+  building_count: "Nombre de bâtiments",
+  meter_count: "Nombre de compteurs",
+  quality_score: "Score de qualité",
+  status: "Statut",
+  content_hash: "Empreinte du contenu",
+  created_at: "Créé le",
+  analyzed_at: "Analysé le",
+  building_id: "Bâtiment",
+  label: "Libellé",
+  fluid_type: "Type de fluide",
+  unit: "Unité",
+  role: "Rôle",
+  measurement_kind: "Nature de mesure",
+  parent_meter_id: "Compteur parent",
+  expected_frequency: "Fréquence attendue",
+  service_start: "Mise en service",
+  service_end: "Fin de service",
+  validated_at: "Validé le",
+  points_reconstructed: "Points reconstruits",
+  points_smoothed: "Points lissés",
+  quality_before: "Qualité avant",
+  quality_after: "Qualité après",
+  spike_deviation_pct: "Seuil pic (%)",
+  drop_deviation_pct: "Seuil chute (%)",
+  reference_window_periods: "Fenêtre de référence (périodes)",
+  flatline_min_run: "Plateau minimal (points)",
+  allow_negative_values: "Valeurs négatives autorisées",
+  historical_min_points: "Historique minimal (points)",
+  robust_mad_multiplier: "Multiplicateur MAD robuste",
+  historical_extreme_ratio: "Ratio extrême historique",
+  zero_active_min_history: "Historique minimal (zéro actif)",
+  seasonal_activity_min_history: "Historique minimal (saisonnier)",
+  timestamp_tolerance_pct: "Tolérance horodatage (%)",
+  timestamp: "Horodatage",
+  value: "Valeur",
+  raw_value: "Valeur brute",
+  quality: "Qualité",
+};
+
+function columnLabel(key: string): string {
+  return COLUMN_LABELS[key] ?? key;
 }

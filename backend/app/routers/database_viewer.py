@@ -46,6 +46,25 @@ def _cell(value):
     return str(value)
 
 
+@router.post("/wipe")
+def wipe_database(db: Session = Depends(get_db)):
+    """Delete every row from every table. Irreversible — the frontend only
+    calls this after an explicit, two-step confirmation from the user."""
+    # Children before parents, so this works even on a backend where FK
+    # ON DELETE CASCADE isn't relied upon.
+    ordered = [
+        "readings", "anomalies", "meter_validations", "processing_history",
+        "import_batches", "meters", "buildings", "org_settings",
+    ]
+    remaining = [n for n in _TABLES_BY_NAME if n not in ordered]
+    for name in ordered + remaining:
+        model = _TABLES_BY_NAME.get(name)
+        if model is not None:
+            db.query(model).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "ok"}
+
+
 @router.get("/tables")
 def list_tables(db: Session = Depends(get_db)):
     """Table names with their row count — one COUNT(*) each, no row data,

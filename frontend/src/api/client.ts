@@ -115,4 +115,6 @@ export const api = {
 
   getDbTableRows: (table: string, limit: number, offset: number) =>
     request<DbTableRows>(`/db/tables/${encodeURIComponent(table)}/rows?limit=${limit}&offset=${offset}`),
+
+  wipeDatabase: () => request<{ status: string }>("/db/wipe", { method: "POST" }),
 };
