@@ -85,6 +85,37 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
     navigate(`/traitements/${summary.id}`, { state: { meterId: selectedMeterId } });
   }
 
+  if (meters.length === 0) {
+    // No reading was ever attached to this batch — almost always because
+    // it's an exact duplicate of a file already imported earlier (flagged
+    // ImportStatus.DEJA_TRAITE: a new entry is kept so the attempt stays
+    // visible, but nothing is re-ingested). Showing the normal tabs here
+    // would mean an empty, unexplained "Compteur" dropdown and an empty
+    // chart — this explains why instead.
+    return (
+      <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
+          <InfoIcon className="h-6 w-6 text-amber-500" />
+          <p className="text-sm font-medium text-gray-800">
+            Ce fichier n'a aucune donnée à afficher ici.
+          </p>
+          <p className="max-w-md text-sm text-gray-500">
+            {summary.status === "deja_traite"
+              ? "Son contenu est identique à un fichier déjà importé précédemment : pour éviter les doublons, il n'a pas été réimporté. Les données existent déjà en base sous le premier import."
+              : "Aucun relevé n'a été associé à ce dossier — vérifiez le fichier source ou réessayez l'import."}
+          </p>
+        </div>
+        <div className="border-t border-gray-100 bg-gray-50 px-6 py-4">
+          <div className="flex justify-end gap-2">
+            <ActionButton onClick={() => handle("reject")} busy={busy === "reject"} variant="danger">
+              Retirer de la liste
+            </ActionButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm">
       {busy === "reanalyze" && <LoadingOverlay label="Réanalyse du fichier en cours…" />}
