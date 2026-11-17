@@ -156,6 +156,37 @@ class ParseResult:
     warnings: list[str]
 
 
+def _strip_offset(parsed: pd.Series) -> pd.Series:
+    """Drop any UTC-offset/timezone info so a parsed batch always lands as
+    plain, timezone-naive timestamps before it's written into `result`
+    (itself a naive `datetime64[ns]` column).
+
+    Some real-world exports carry an explicit offset (e.g.
+    "2024-03-30T01:00:00+01:00") — often inconsistently, because the file
+    spans a DST change. Depending on the pandas version, assigning such a
+    tz-aware (or mixed-offset, which pandas represents as plain Python
+    `Timestamp` objects in an `object` column) result straight into a naive
+    `datetime64[ns]` column either raises outright or silently casts the
+    *whole* `result` column to `object` dtype — which is what produces the
+    "Can only use .dt accessor with datetimelike values" failure much later,
+    when the already-corrupted column reaches the DB-write step. This app
+    only compares and stores local wall-clock readings, never needs the
+    offset itself, so it's simplest and safest to always strip it up front,
+    right after parsing, rather than carry tz-awareness through the rest of
+    the pipeline."""
+    if isinstance(parsed.dtype, pd.DatetimeTZDtype):
+        return parsed.dt.tz_localize(None)
+    if parsed.dtype == object:
+        def _to_naive(v):
+            if pd.isna(v):
+                return pd.NaT
+            ts = pd.Timestamp(v)
+            return ts.tz_localize(None) if ts.tzinfo is not None else ts
+
+        return parsed.map(_to_naive)
+    return parsed
+
+
 def _parse_timestamps(col: pd.Series) -> pd.Series:
     """Vectorized equivalent of calling a per-value parser through
     `.apply()` — for a year of quarter-hourly readings that's tens of
@@ -171,7 +202,7 @@ def _parse_timestamps(col: pd.Series) -> pd.Series:
     # YYYY-MM month period -> first of month
     month_mask = s.str.fullmatch(r"\d{4}-\d{2}") & ~empty_mask
     if month_mask.any():
-        result.loc[month_mask] = pd.to_datetime(s[month_mask] + "-01", errors="coerce")
+        result.loc[month_mask] = _strip_offset(pd.to_datetime(s[month_mask] + "-01", errors="coerce"))
 
     # ISO dates (YYYY-MM-DD, optionally with a time) are unambiguous and must
     # NOT be parsed with dayfirst=True: depending on the pandas version, that
@@ -181,7 +212,16 @@ def _parse_timestamps(col: pd.Series) -> pd.Series:
     # genuinely ambiguous DD/MM/YYYY style (e.g. "01/10/2025").
     iso_mask = s.str.match(r"^\d{4}-\d{2}-\d{2}([ T]|$)") & ~month_mask & ~empty_mask
     if iso_mask.any():
-        result.loc[iso_mask] = pd.to_datetime(s[iso_mask], dayfirst=False, errors="coerce")
+        try:
+            parsed = pd.to_datetime(s[iso_mask], dayfirst=False, errors="coerce")
+        except ValueError:
+            # A column mixing several distinct UTC offsets (e.g. across a
+            # DST change) makes pandas refuse the whole batched parse
+            # outright rather than coercing row by row — fall back to
+            # parsing one value at a time so a handful of offset-bearing
+            # rows can't take down the entire file's import.
+            parsed = s[iso_mask].map(lambda v: _parse_one_timestamp(v, dayfirst=False))
+        result.loc[iso_mask] = _strip_offset(parsed)
 
     other_mask = ~month_mask & ~iso_mask & ~empty_mask
     if other_mask.any():
@@ -192,11 +232,24 @@ def _parse_timestamps(col: pd.Series) -> pd.Series:
         # daily rows next to otherwise hourly ones). Still vectorized
         # (a single call, not a Python-level loop), just without the
         # single-shared-format shortcut.
-        result.loc[other_mask] = pd.to_datetime(
-            s[other_mask], dayfirst=True, errors="coerce", format="mixed"
-        )
+        try:
+            parsed = pd.to_datetime(s[other_mask], dayfirst=True, errors="coerce", format="mixed")
+        except ValueError:
+            parsed = s[other_mask].map(lambda v: _parse_one_timestamp(v, dayfirst=True))
+        result.loc[other_mask] = _strip_offset(parsed)
 
     return result
+
+
+def _parse_one_timestamp(value: str, dayfirst: bool) -> "pd.Timestamp | None":
+    """Per-value fallback used only when pandas refuses to parse an entire
+    column in one batch because of mixed UTC offsets. Returns NaT (via None,
+    coerced by the caller) rather than raising, matching the batched calls'
+    own errors="coerce" behaviour."""
+    try:
+        return pd.to_datetime(value, dayfirst=dayfirst, errors="coerce")
+    except Exception:
+        return pd.NaT
 
 
 def _parse_values(col: pd.Series, dec: str) -> pd.Series:
