@@ -182,6 +182,7 @@ export default function QualificationPage() {
           mappingBusy={previewing}
         />
       )}
+      {uploading && <LoadingOverlay label="Import et analyse en cours… (peut prendre un moment pour un gros fichier)" />}
 
       <div className="flex-1 px-8 pb-6">
         <div className="flex flex-col gap-4">

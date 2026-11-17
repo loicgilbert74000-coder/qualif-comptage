@@ -84,19 +84,38 @@ def _build_expected_index(start: pd.Timestamp, end: pd.Timestamp, granularity: s
 def _group_consecutive(mask_index: list[pd.Timestamp], granularity: str) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
     """Collapse a sorted list of timestamps flagged the same way into
     contiguous (start, end) bands, matching the mock-up's period ranges."""
+    return [(start, end) for start, end, _ in _group_consecutive_with_points(mask_index, granularity)]
+
+
+def _group_consecutive_with_points(
+    mask_index: list[pd.Timestamp], granularity: str
+) -> list[tuple[pd.Timestamp, pd.Timestamp, list[pd.Timestamp]]]:
+    """Same grouping as `_group_consecutive`, but also hands back each
+    band's own member timestamps in one pass — so a caller that needs a
+    per-point value for every band (e.g. the worst deviation in that band)
+    never has to re-scan the full candidate set once per band. Re-scanning
+    the whole set for every band turns what should be an O(n) pass into
+    O(bands × n): harmless for a handful of anomalies, but a real-world
+    meter with a legitimately swingy curve (e.g. PV production, flagged
+    before its usage profile is tuned) can produce thousands of short
+    bands, and that product explodes into tens of millions of comparisons
+    — this was measured taking over a minute on a single busy meter."""
     if not mask_index:
         return []
     step = GRANULARITIES[granularity]
-    bands: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    bands: list[tuple[pd.Timestamp, pd.Timestamp, list[pd.Timestamp]]] = []
     band_start = band_end = mask_index[0]
+    band_points = [mask_index[0]]
     for ts in mask_index[1:]:
         expected_next = band_end + step if granularity != "mensuelle" else (band_end + pd.DateOffset(months=1))
         if ts == expected_next:
             band_end = ts
+            band_points.append(ts)
         else:
-            bands.append((band_start, band_end))
+            bands.append((band_start, band_end, band_points))
             band_start = band_end = ts
-    bands.append((band_start, band_end))
+            band_points = [ts]
+    bands.append((band_start, band_end, band_points))
     return bands
 
 
@@ -316,8 +335,11 @@ def analyze_series(
     )
     for sub in subtypes:
         pts = sorted(ts for ts, (s, _) in incoherent_ts.items() if s == sub)
-        for start, end in _group_consecutive(pts, granularity):
-            devs = [incoherent_ts[ts][1] for ts in incoherent_ts if start <= ts <= end and incoherent_ts[ts][0] == sub]
+        for start, end, band_points in _group_consecutive_with_points(pts, granularity):
+            # band_points is already exactly this band's slice of pts (all
+            # of subtype `sub`), so no re-filtering against incoherent_ts is
+            # needed here — see _group_consecutive_with_points' docstring.
+            devs = [incoherent_ts[ts][1] for ts in band_points]
             dev = max(devs, key=abs) if devs and devs[0] is not None else None
             label = {
                 "pic": f"Pic de consommation ({'+' if dev and dev > 0 else ''}{dev:.0f}% vs référence)" if dev is not None else "Pic de consommation",

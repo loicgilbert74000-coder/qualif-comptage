@@ -157,6 +157,18 @@ def get_criteria_profile(db: Session, measurement_kind: str | None, usage_profil
     kind = measurement_kind if measurement_kind in KIND_LABELS else "indéterminé"
     usage = usage_profile if usage_profile in USAGE_LABELS else "indéterminé"
 
+    # Usage-specific overrides (logement/tertiaire/scolaire/production) are
+    # only ever seeded under the "consommation" kind — most real-world
+    # exports carry no explicit "type de mesure" column though, so a
+    # load-curve meter's own kind very often stays "indéterminé". Without
+    # this, a meter whose usage a human HAS confirmed (e.g. "production"
+    # for a PV/injection meter) would silently fall back to the generic,
+    # far more sensitive "indéterminé" thresholds just because its kind was
+    # never explicitly classified — defeating the point of confirming a
+    # usage at all.
+    if kind == "indéterminé" and usage != "indéterminé":
+        kind = "consommation"
+
     profile = db.query(CriteriaProfile).filter_by(measurement_kind=kind, usage_profile=usage).first()
     if profile is None and usage != "indéterminé":
         profile = db.query(CriteriaProfile).filter_by(measurement_kind=kind, usage_profile="indéterminé").first()

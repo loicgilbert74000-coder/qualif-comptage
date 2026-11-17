@@ -524,7 +524,15 @@ def _update_usage_suggestion(db: Session, meter: Meter) -> None:
         if derived is None:
             return  # no derived consumption series yet — nothing to detect from
         series_df, kind_for_detection = _all_rows_df(db, derived.id), "consommation"
-    elif meter.measurement_kind == "consommation":
+    elif meter.measurement_kind in ("consommation", "indéterminé"):
+        # Most real-world exports carry no explicit "type de mesure" column,
+        # so a load-curve meter's kind very often stays "indéterminé" rather
+        # than being recognised as "consommation" — without this branch, a
+        # PV/injection meter imported that way never got a usage suggestion
+        # (and so never got its much more lenient "production" detection
+        # thresholds applied), however clearly its role said "production".
+        # The shape heuristics below only care that the series is a
+        # quantity-per-period curve, which "indéterminé" already is.
         series_df, kind_for_detection = _all_rows_df(db, meter.id), "consommation"
     else:
         return
