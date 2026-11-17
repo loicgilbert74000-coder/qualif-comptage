@@ -7,7 +7,7 @@ import QualityBar from "../components/QualityBar";
 import ProgressBar from "../components/ProgressBar";
 import LoadingOverlay from "../components/LoadingOverlay";
 import DetailedAnalysis from "../components/DetailedAnalysis";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { ImportBatchSummary, ImportBatchDetail, ImportPreview, UnmappedFileInfo } from "../types";
 
 export default function QualificationPage() {
@@ -17,6 +17,11 @@ export default function QualificationPage() {
   const [uploading, setUploading] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set only when the backend reports a genuinely unreadable file (not
+  // merely an unrecognised format, which routes to the mapping screen
+  // instead) — carries a raw excerpt of the file so the person can see
+  // for themselves why it didn't work.
+  const [unreadableFile, setUnreadableFile] = useState<{ filename: string; contentPreview: string } | null>(null);
 
   const [previewing, setPreviewing] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
@@ -58,6 +63,7 @@ export default function QualificationPage() {
     const fileArray = Array.from(files);
     setPreviewing(true);
     setError(null);
+    setUnreadableFile(null);
     try {
       const result = await api.previewImport(fileArray);
       setPendingFiles(fileArray);
@@ -68,6 +74,9 @@ export default function QualificationPage() {
       setSelectedCodes(new Set(result.meters.map((m) => m.meter_code)));
     } catch (e) {
       setError((e as Error).message);
+      if (e instanceof ApiError && e.contentPreview) {
+        setUnreadableFile({ filename: e.filename ?? "", contentPreview: e.contentPreview });
+      }
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (folderInputRef.current) folderInputRef.current.value = "";
     } finally {
@@ -127,7 +136,14 @@ export default function QualificationPage() {
       setActiveId(batch.id);
       cancelPreview();
     } catch (e) {
+      // The modal must close here: left open, it visually hides the error
+      // message behind it, and the person has to click "Annuler" first just
+      // to see what went wrong before they can even retry.
+      cancelPreview();
       setError((e as Error).message);
+      if (e instanceof ApiError && e.contentPreview) {
+        setUnreadableFile({ filename: e.filename ?? "", contentPreview: e.contentPreview });
+      }
     } finally {
       setUploading(false);
     }
@@ -233,6 +249,16 @@ export default function QualificationPage() {
               mazout, granulés, etc.).
             </p>
             {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+            {unreadableFile && (
+              <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                <p className="text-xs font-medium text-red-700">
+                  Contenu de « {unreadableFile.filename} » :
+                </p>
+                <pre className="mt-1.5 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-white px-2.5 py-2 text-xs text-gray-600">
+                  {unreadableFile.contentPreview}
+                </pre>
+              </div>
+            )}
           </section>
 
           <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">

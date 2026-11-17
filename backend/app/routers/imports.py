@@ -25,7 +25,17 @@ from app.schemas.import_batch import (
     UsageProfileUpdate,
 )
 from app.services import import_service
+from app.services.csv_parser import UnreadableFileError
 from app.services.diagnosis_engine import diagnose
+
+
+def _unreadable_file_detail(exc: UnreadableFileError) -> dict:
+    """An unreadable-file error carries a content excerpt the import screen
+    can show the person — structuring it as a dict `detail` (FastAPI allows
+    any JSON-serialisable value there) rather than the plain string every
+    other error uses, so the frontend can tell the two apart and render the
+    excerpt instead of just the message."""
+    return {"message": str(exc), "filename": exc.filename, "content_preview": exc.content_preview}
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 
@@ -88,6 +98,8 @@ async def create_import(
             db, payload, decimal_separator=decimal_separator, delimiter=delimiter,
             selected_meter_codes=meter_filter, column_mapping=mapping,
         )
+    except UnreadableFileError as exc:
+        raise HTTPException(400, _unreadable_file_detail(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive: never surface a raw 500 for a bad file
@@ -125,6 +137,8 @@ async def preview_import(
         return import_service.preview_import(
             db, payload, delimiter=delimiter, decimal_separator=decimal_separator, column_mapping=mapping
         )
+    except UnreadableFileError as exc:
+        raise HTTPException(400, _unreadable_file_detail(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive: never surface a raw 500 for a bad file

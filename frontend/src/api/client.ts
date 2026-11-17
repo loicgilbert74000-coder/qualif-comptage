@@ -23,17 +23,42 @@ import type {
 
 const BASE = "/api";
 
+/** Most errors from the API are a plain string `detail`. A handful of
+ * import-related endpoints instead send a structured object — `{ message,
+ * filename, content_preview }` — when a file is genuinely unreadable, so the
+ * import screen can show the user *why* (a raw excerpt of the file) instead
+ * of just a one-line message. `ApiError` carries that extra data through to
+ * the `catch` block when it's present, and behaves like a normal `Error`
+ * (its `message` is just the text) when it's not. */
+export class ApiError extends Error {
+  filename?: string;
+  contentPreview?: string;
+
+  constructor(message: string, extra?: { filename?: string; contentPreview?: string }) {
+    super(message);
+    this.name = "ApiError";
+    this.filename = extra?.filename;
+    this.contentPreview = extra?.contentPreview;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, init);
   if (!res.ok) {
-    let detail = res.statusText;
+    let detail: string = res.statusText;
+    let structured: { filename?: string; contentPreview?: string } | undefined;
     try {
       const body = await res.json();
-      detail = body.detail || detail;
+      if (body.detail && typeof body.detail === "object") {
+        detail = body.detail.message || detail;
+        structured = { filename: body.detail.filename, contentPreview: body.detail.content_preview };
+      } else {
+        detail = body.detail || detail;
+      }
     } catch {
       /* ignore */
     }
-    throw new Error(detail);
+    throw new ApiError(detail, structured);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;

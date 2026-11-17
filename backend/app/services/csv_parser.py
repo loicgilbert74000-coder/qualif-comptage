@@ -56,6 +56,51 @@ COLUMN_UNIT_HINTS: dict[str, str] = {
     "energie_kwh": "kWh",
 }
 
+class UnreadableFileError(ValueError):
+    """Raised only when a file is genuinely unreadable as a table — not
+    merely unrecognised (that's the ordinary ValueError the manual-mapping
+    screen already handles). Carries a short excerpt of what was actually
+    in the file, so the import screen can show *why* instead of just
+    failing — most people can tell at a glance that a file is the wrong
+    export, empty, or not really a CSV once they see its first lines."""
+
+    def __init__(self, filename: str, message: str, content_preview: str):
+        super().__init__(message)
+        self.filename = filename
+        self.content_preview = content_preview
+
+
+def _content_excerpt(text: str, max_lines: int = 40, max_chars: int = 4000) -> str:
+    lines = text.splitlines()
+    truncated_lines = len(lines) > max_lines
+    excerpt = "\n".join(lines[:max_lines])
+    if len(excerpt) > max_chars:
+        excerpt = excerpt[:max_chars]
+        truncated_lines = True
+    if truncated_lines:
+        excerpt += "\n…"
+    return excerpt
+
+
+def _read_csv_leniently(text: str, delim: str, **kwargs) -> tuple[pd.DataFrame, int]:
+    """Same read as the strict `pd.read_csv` call, but tolerant of rows
+    whose field count doesn't match the header — the single most common way
+    a real-world export turns out to be "malformed" (a stray delimiter in a
+    free-text column, a half-written last line, …). Rows pandas can't
+    reconcile with the header are dropped rather than aborting the whole
+    file; the caller surfaces how many as a warning instead of silently
+    losing data. Returns (dataframe, rows_skipped); raises ValueError
+    itself if even this doesn't produce anything usable, so a caller that
+    wants a content excerpt on failure only needs to wrap this one call."""
+    # Count actual lines, not newline characters: a file ending in "\n" (the
+    # usual case) would otherwise count one phantom trailing line and
+    # overstate how many rows were skipped by one.
+    before = len(text.splitlines())
+    df = pd.read_csv(io.StringIO(text), sep=delim, dtype=str, keep_default_na=False, on_bad_lines="skip", **kwargs)
+    skipped = max(0, before - (len(df) + 1))
+    return df, skipped
+
+
 def _norm(s: str) -> str:
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "_", s.strip().lower()).strip("_")
@@ -189,8 +234,19 @@ def sniff_csv_columns(
     delim = delimiter or detect_delimiter(sample)
     try:
         df = pd.read_csv(io.StringIO(text), sep=delim, dtype=str, keep_default_na=False, nrows=5)
-    except Exception as exc:  # pragma: no cover - genuinely unreadable file
-        raise ValueError(f"Impossible de lire {filename} comme un fichier CSV : {exc}") from exc
+    except Exception:
+        try:
+            df, _ = _read_csv_leniently(text, delim, nrows=5)
+        except Exception as exc:
+            raise UnreadableFileError(
+                filename,
+                f"Impossible de lire {filename} comme un fichier CSV : {exc}",
+                _content_excerpt(text),
+            ) from exc
+    if df.shape[1] == 0:
+        raise UnreadableFileError(
+            filename, f"{filename} ne contient aucune colonne exploitable.", _content_excerpt(text)
+        )
     columns = [c.strip() for c in df.columns]
     return {
         "columns": columns,
@@ -213,18 +269,35 @@ def parse_csv_bytes(
 
     try:
         df = pd.read_csv(io.StringIO(text), sep=delim, dtype=str, keep_default_na=False)
-    except Exception as exc:  # pragma: no cover - genuinely unreadable/malformed file
-        # Anything pandas itself refuses (inconsistent column counts between
-        # rows, a binary file mistakenly named .csv, ...) must still surface
-        # as a clear message rather than an unhandled 500 — callers only
-        # catch ValueError to turn it into the manual-mapping screen or a
-        # 400 response.
-        raise ValueError(
-            f"Impossible de lire {filename} comme un fichier CSV : {exc}"
-        ) from exc
+    except Exception:
+        # The most common reason pandas refuses a file outright is a handful
+        # of rows whose field count doesn't match the header (a stray
+        # delimiter in a free-text value, a truncated last line, …) — not
+        # that the file is unreadable. Retry tolerating those before giving
+        # up on the whole file.
+        try:
+            df, skipped = _read_csv_leniently(text, delim)
+        except Exception as exc:  # pragma: no cover - genuinely unreadable/malformed file
+            # Anything pandas still refuses even leniently (a binary file
+            # mistakenly named .csv, an encoding that produces no delimiter
+            # at all, ...) must still surface as a clear message with a
+            # look at the actual content, rather than an unhandled 500 or a
+            # dead-end error nobody can act on.
+            raise UnreadableFileError(
+                filename,
+                f"Impossible de lire {filename} comme un fichier CSV : {exc}",
+                _content_excerpt(text),
+            ) from exc
+        if skipped:
+            warnings.append(
+                f"{skipped} ligne(s) de {filename} ignorée(s) car mal formées "
+                "(nombre de colonnes incohérent par rapport à l'en-tête)."
+            )
     df.columns = [c.strip() for c in df.columns]
     if df.shape[1] == 0 or len(df.columns) == 0:
-        raise ValueError(f"{filename} ne contient aucune colonne exploitable.")
+        raise UnreadableFileError(
+            filename, f"{filename} ne contient aucune colonne exploitable.", _content_excerpt(text)
+        )
 
     mapping = dict(column_mapping) if column_mapping else detect_column_mapping(list(df.columns))
 

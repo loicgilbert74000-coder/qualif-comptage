@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-
 /** A centered, impossible-to-miss progress indicator for actions that
  * reload/recompute data already on screen (reanalysing a file, or all of
  * them) — as opposed to the small inline bar used for a first import, which
@@ -9,22 +7,9 @@ import { useEffect, useState } from "react";
  * The backend doesn't emit real progress events for these long operations
  * (import, (ré)analyse, qualification…), so there's no genuine percentage
  * to show — a bar that fills up to a fake 80% and then stalls would be
- * worse than no number at all. Instead: a spinning ring (reads as "working",
- * not "X% done") plus a running elapsed-time counter, which is the one
- * thing we *can* say honestly and gives a concrete sense of how long this
- * particular wait has been going on. */
+ * worse than no number at all. Instead: a spinning ring, which reads as
+ * "working", not "X% done". */
 export default function LoadingOverlay({ label }: { label: string }) {
-  const [elapsedMs, setElapsedMs] = useState(0);
-
-  useEffect(() => {
-    const start = Date.now();
-    const id = window.setInterval(() => setElapsedMs(Date.now() - start), 200);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const seconds = elapsedMs / 1000;
-  const elapsedLabel = seconds < 60 ? `${seconds.toFixed(1)} s` : `${Math.floor(seconds / 60)} min ${Math.round(seconds % 60)} s`;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/20 backdrop-blur-[1px]">
       <div className="flex w-80 flex-col items-center gap-3 rounded-xl bg-white px-6 py-6 text-center shadow-xl">
@@ -38,7 +23,6 @@ export default function LoadingOverlay({ label }: { label: string }) {
           />
         </svg>
         <p className="text-sm font-medium text-gray-700">{label}</p>
-        <p className="text-xs tabular-nums text-gray-400">Temps écoulé : {elapsedLabel}</p>
       </div>
     </div>
   );
