@@ -202,8 +202,34 @@ def main() -> None:
         import webview  # pywebview: a native OS window around the local URL
 
         log.info("Ouverture de la fenêtre native (pywebview)")
-        webview.create_window(APP_TITLE, url, width=1440, height=900, min_size=(1000, 700))
+        window = webview.create_window(APP_TITLE, url, width=1440, height=900, min_size=(1000, 700))
+
+        # On Windows, pywebview's EdgeChromium (WebView2) backend relies on
+        # pythonnet/COM under the hood, and `webview.start()` returning when
+        # the window is closed is not something we can always count on: a
+        # stray non-daemon thread spun up by that native layer, or a COM
+        # apartment that never tears down, can keep the interpreter alive
+        # indefinitely with no window left on screen — which is exactly what
+        # shows up as "the app won't close, I have to kill it from Task
+        # Manager". Rather than rely on a clean return from `start()`, force
+        # the whole process to end the moment the window actually closes.
+        # os._exit (not sys.exit) skips Python's normal shutdown sequence
+        # entirely — no atexit handlers, no waiting on any thread — which is
+        # exactly what we want here: by this point the user has already
+        # closed the window, there is nothing left worth finishing, and any
+        # leftover background thread is precisely what we're trying to stop
+        # waiting on.
+        def _on_closed() -> None:
+            log.info("Fenêtre fermée — arrêt forcé du processus")
+            os._exit(0)
+
+        window.events.closed += _on_closed
+
         webview.start()
+        # Reached only if `start()` itself returns (e.g. on Linux/GTK, or if
+        # pywebview's own loop exits cleanly) rather than the `closed` event
+        # firing first — fall through to the same forced exit below instead
+        # of leaving it to Python's normal interpreter shutdown.
     except Exception:
         log.exception("Fenêtre native indisponible, repli sur le navigateur par défaut")
         _safe_print("Fenêtre native indisponible, ouverture dans le navigateur par défaut.")
@@ -219,6 +245,11 @@ def main() -> None:
             server_thread.join()
 
     log.info("=== Fermeture ===")
+    # Belt and braces: whatever path got us here, make sure the process
+    # actually ends instead of lingering in the background because of a
+    # non-daemon thread we don't control (native-window toolkit internals,
+    # a driver thread, ...). See the comment on _on_closed above.
+    os._exit(0)
 
 
 if __name__ == "__main__":
