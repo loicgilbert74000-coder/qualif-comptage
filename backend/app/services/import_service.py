@@ -32,6 +32,8 @@ from app.services.csv_parser import parse_csv_bytes, sniff_csv_columns, ParseRes
 from app.services.quality_engine import analyze_series, batch_quality_score, MeterQualityReport, infer_granularity, GRANULARITIES
 from app.services.reconstruction_engine import reconstruct_series
 from app.services.site_reference import lookup_site_name
+from app.services.criteria_profiles import get_criteria_profile
+from app.services.usage_detector import detect_usage_profile
 
 QUALITY_OK_THRESHOLD = 90.0  # >= this -> "à valider", below -> "à corriger"
 
@@ -497,11 +499,43 @@ def _meter_rows_df(db: Session, meter_id, batch_id) -> pd.DataFrame:
     return pd.DataFrame({"timestamp": [r.timestamp for r in rows], "value": [r.raw_value for r in rows]})
 
 
+def _all_rows_df(db: Session, meter_id) -> pd.DataFrame:
+    """Every reading this meter has, across every import batch — used for
+    usage-profile detection, where more history makes for a more reliable
+    guess than whatever happens to be in the batch being (re)analysed."""
+    rows = db.query(Reading).filter(Reading.meter_id == meter_id).order_by(Reading.timestamp).all()
+    return pd.DataFrame({"timestamp": [r.timestamp for r in rows], "value": [r.raw_value for r in rows]})
+
+
+def _update_usage_suggestion(db: Session, meter: Meter) -> None:
+    """Refreshes meter.usage_profile_suggested from the shape of its own
+    curve. Never touches usage_profile itself (the confirmed value) — that
+    only changes when a human accepts or picks one via set_meter_usage_profile.
+    Left alone once confirmed, so a later, noisier batch can't silently
+    second-guess a choice the user already made."""
+    if meter.usage_profile is not None:
+        return
+    if meter.measurement_kind == "index":
+        derived = (
+            db.query(Meter)
+            .filter(Meter.parent_meter_id == meter.id, Meter.measurement_kind == "consommation")
+            .first()
+        )
+        if derived is None:
+            return  # no derived consumption series yet — nothing to detect from
+        series_df, kind_for_detection = _all_rows_df(db, derived.id), "consommation"
+    elif meter.measurement_kind == "consommation":
+        series_df, kind_for_detection = _all_rows_df(db, meter.id), "consommation"
+    else:
+        return
+    suggestion = detect_usage_profile(series_df, measurement_kind=kind_for_detection, role=meter.role)
+    if suggestion != meter.usage_profile_suggested:
+        meter.usage_profile_suggested = suggestion
+
+
 def run_quality_analysis(db: Session, batch: ImportBatch) -> list[MeterQualityReport]:
     """(Re)computes anomalies and the quality score for every meter in the
     batch. Safe to call again later ("Réanalyser")."""
-    cfg = get_org_settings(db)
-
     db.query(Anomaly).filter(Anomaly.import_batch_id == batch.id).delete()
 
     meter_ids = [
@@ -512,6 +546,8 @@ def run_quality_analysis(db: Session, batch: ImportBatch) -> list[MeterQualityRe
     reports: list[MeterQualityReport] = []
     for meter_id in meter_ids:
         meter = db.query(Meter).get(meter_id)
+        _update_usage_suggestion(db, meter)
+        cfg = get_criteria_profile(db, meter.measurement_kind, meter.usage_profile)
         df = _meter_rows_df(db, meter_id, batch.id)
         report = analyze_series(
             meter.code,
@@ -570,6 +606,29 @@ def run_quality_analysis(db: Session, batch: ImportBatch) -> list[MeterQualityRe
     db.commit()
     db.refresh(batch)
     return reports
+
+
+VALID_USAGE_PROFILES = {"logement", "tertiaire", "scolaire", "production"}
+
+
+def set_meter_usage_profile(db: Session, batch: ImportBatch, meter_id, profile: str | None) -> Meter:
+    """Confirms (or clears) a meter's usage category — whether the user
+    accepted the engine's own suggestion or picked a different one by hand.
+    Re-runs this dossier's quality analysis immediately afterwards, so the
+    criteria profile change (different thresholds) is reflected in this
+    meter's anomalies right away rather than only at the next Réanalyser."""
+    if profile is not None and profile not in VALID_USAGE_PROFILES:
+        raise ValueError(f"Profil d'usage invalide : {profile!r}.")
+    meter = db.query(Meter).get(meter_id)
+    if meter is None:
+        raise ValueError("Compteur introuvable.")
+    meter.usage_profile = profile
+    if profile is not None and meter.usage_profile_suggested == profile:
+        meter.usage_profile_suggested = None  # accepted: nothing left to suggest
+    db.commit()
+    run_quality_analysis(db, batch)
+    db.refresh(meter)
+    return meter
 
 
 def validate_and_reconstruct(db: Session, batch: ImportBatch) -> dict:
@@ -734,7 +793,7 @@ def validate_meter(db: Session, batch: ImportBatch, meter_id: uuid.UUID) -> dict
 
     from app.services.quality_engine import infer_granularity, _build_expected_index, analyze_series
 
-    cfg = get_org_settings(db)
+    cfg = get_criteria_profile(db, meter.measurement_kind, meter.usage_profile)
 
     def _quality_pct(df: pd.DataFrame) -> float:
         report = analyze_series(
@@ -954,7 +1013,7 @@ def correction_options_for_anomaly(db: Session, anomaly: Anomaly) -> list[dict]:
     from app.services.reconstruction_engine import available_correction_methods
     from app.services.quality_engine import analyze_series
 
-    cfg = get_org_settings(db)
+    cfg = get_criteria_profile(db, meter.measurement_kind, meter.usage_profile)
     has_weather = ctx.get("environmental_features") is not None
     options = available_correction_methods(
         meter.measurement_kind,

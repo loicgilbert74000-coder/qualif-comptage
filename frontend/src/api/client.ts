@@ -16,6 +16,9 @@ import type {
   ReadingFilters,
   ReadingFilterOptions,
   ExportFormat,
+  CriteriaProfile,
+  CriteriaProfileUpdate,
+  MeterQualitySummary,
 } from "../types";
 
 const BASE = "/api";
@@ -168,4 +171,20 @@ export const api = {
   },
 
   wipeDatabase: () => request<{ status: string }>("/db/wipe", { method: "POST" }),
+
+  getCriteriaProfiles: () => request<CriteriaProfile[]>("/criteria-profiles"),
+
+  updateCriteriaProfile: (profileId: number, payload: CriteriaProfileUpdate) =>
+    request<CriteriaProfile>(`/criteria-profiles/${profileId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+
+  setMeterUsageProfile: (batchId: string, meterId: string, profile: string | null) =>
+    request<MeterQualitySummary>(`/imports/${batchId}/meters/${meterId}/usage-profile`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile }),
+    }),
 };

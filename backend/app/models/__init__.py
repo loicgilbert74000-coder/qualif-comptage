@@ -7,6 +7,7 @@ from app.models.anomaly import Anomaly, AnomalyType, AnomalyResolution
 from app.models.history import ProcessingHistory, ProcessingAction
 from app.models.org_settings import OrgSettings
 from app.models.meter_validation import MeterValidation
+from app.models.criteria_profile import CriteriaProfile
 
 __all__ = [
     "Base",
@@ -25,4 +26,5 @@ __all__ = [
     "ProcessingAction",
     "OrgSettings",
     "MeterValidation",
+    "CriteriaProfile",
 ]

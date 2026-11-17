@@ -8,9 +8,10 @@ from fastapi.responses import FileResponse
 from sqlalchemy import inspect, text
 
 from app.config import settings
-from app.database import engine
+from app.database import engine, SessionLocal
 from app.models import Base
-from app.routers import imports, buildings, history, settings_router, database_viewer
+from app.routers import imports, buildings, history, settings_router, database_viewer, criteria_profiles
+from app.services.criteria_profiles import seed_default_profiles
 from app._version import BUILD_VERSION
 
 app = FastAPI(title="Qualification des données de comptage", version="0.1.0")
@@ -91,6 +92,21 @@ def on_startup():
     if "quality_score" not in meter_columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE meters ADD COLUMN quality_score FLOAT"))
+    if "usage_profile" not in meter_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE meters ADD COLUMN usage_profile VARCHAR(24)"))
+    if "usage_profile_suggested" not in meter_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE meters ADD COLUMN usage_profile_suggested VARCHAR(24)"))
+
+    # criteria_profiles is a brand-new table (create_all above already made
+    # it) — seed it once from whatever org_settings already held, so a site
+    # that had tuned its old global thresholds doesn't lose that tuning.
+    db = SessionLocal()
+    try:
+        seed_default_profiles(db)
+    finally:
+        db.close()
 
 
 app.include_router(imports.router)
@@ -98,6 +114,7 @@ app.include_router(buildings.router)
 app.include_router(history.router)
 app.include_router(settings_router.router)
 app.include_router(database_viewer.router)
+app.include_router(criteria_profiles.router)
 
 
 @app.get("/api/health")

@@ -3,7 +3,8 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { api } from "../api/client";
-import type { ImportBatchDetail, AnomalyOut, SeriesPoint, SynthesisOut } from "../types";
+import type { ImportBatchDetail, AnomalyOut, SeriesPoint, SynthesisOut, UsageProfile, MeterQualitySummary } from "../types";
+import { USAGE_PROFILE_LABELS } from "../types";
 import QualityChart from "./QualityChart";
 import QualityBar from "./QualityBar";
 import LoadingOverlay from "./LoadingOverlay";
@@ -33,6 +34,7 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
   const [synthesis, setSynthesis] = useState<SynthesisOut | null>(null);
   const [loadingSeries, setLoadingSeries] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [usageBusy, setUsageBusy] = useState(false);
 
   const selectedMeter = meters.find((m) => m.meter_id === selectedMeterId) ?? meters[0];
 
@@ -60,6 +62,27 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
   );
   const incoherences = meterAnomalies.filter((a) => a.type === "incoherence");
   const missing = meterAnomalies.filter((a) => a.type === "manquante");
+
+  // Confirming (or clearing) a meter's usage profile changes which criteria
+  // profile the backend applies to it, so it re-runs the quality analysis —
+  // the anomaly counts and the series shown here can change too.
+  async function confirmUsageProfile(profile: UsageProfile | null) {
+    if (!selectedMeter) return;
+    setUsageBusy(true);
+    try {
+      await api.setMeterUsageProfile(summary.id, selectedMeter.meter_id, profile);
+      await Promise.all([
+        api.getAnomalies(summary.id).then(setAnomalies),
+        api.getSynthesis(summary.id).then(setSynthesis),
+        api.getSeries(summary.id, selectedMeter.meter_id).then(setSeries),
+      ]);
+      onAction();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setUsageBusy(false);
+    }
+  }
 
   async function handle(action: "reanalyze" | "reject") {
     setBusy(action);
@@ -162,6 +185,7 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
                   </span>
                 )}
               </div>
+              {selectedMeter && <UsageProfilePanel meter={selectedMeter} busy={usageBusy} onConfirm={confirmUsageProfile} />}
               {loadingSeries ? (
                 <div className="flex h-80 items-center justify-center text-sm text-gray-400">Chargement…</div>
               ) : (
@@ -289,6 +313,73 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const USAGE_PROFILE_OPTIONS: UsageProfile[] = ["logement", "tertiaire", "scolaire", "production"];
+
+function UsageProfilePanel({
+  meter,
+  busy,
+  onConfirm,
+}: {
+  meter: MeterQualitySummary;
+  busy: boolean;
+  onConfirm: (profile: UsageProfile | null) => void;
+}) {
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
+  const hasUnconfirmedSuggestion =
+    meter.usage_profile_suggested !== null &&
+    meter.usage_profile_suggested !== meter.usage_profile &&
+    dismissedFor !== `${meter.meter_id}:${meter.usage_profile_suggested}`;
+
+  return (
+    <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-sm text-gray-500">
+          Usage de ce compteur
+          <select
+            className="ml-2 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm text-gray-800 disabled:opacity-50"
+            value={meter.usage_profile ?? ""}
+            disabled={busy}
+            onChange={(e) => onConfirm((e.target.value || null) as UsageProfile | null)}
+          >
+            <option value="">Non confirmé (profil par défaut)</option>
+            {USAGE_PROFILE_OPTIONS.map((p) => (
+              <option key={p} value={p}>
+                {USAGE_PROFILE_LABELS[p]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="text-xs text-gray-400">
+          Détermine les seuils de détection d'anomalies appliqués à ce compteur.
+        </span>
+      </div>
+      {hasUnconfirmedSuggestion && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">
+          <InfoIcon className="h-4 w-4 shrink-0" />
+          <span>
+            Suggestion automatique, d'après la forme de sa courbe :{" "}
+            <strong>{USAGE_PROFILE_LABELS[meter.usage_profile_suggested as string]}</strong>.
+          </span>
+          <button
+            disabled={busy}
+            onClick={() => onConfirm(meter.usage_profile_suggested as UsageProfile)}
+            className="ml-auto rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            Confirmer
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => setDismissedFor(`${meter.meter_id}:${meter.usage_profile_suggested}`)}
+            className="rounded-md border border-blue-200 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+          >
+            Ignorer
+          </button>
+        </div>
+      )}
     </div>
   );
 }

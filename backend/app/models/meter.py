@@ -48,5 +48,14 @@ class Meter(Base):
     )
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-100, latest validation's result
 
+    # Usage category (logement, tertiaire, scolaire, production...) used to
+    # pick which CriteriaProfile applies to this meter. usage_profile is the
+    # value a human confirmed — only it affects detection. usage_profile_
+    # suggested is the engine's own best guess from the curve's shape
+    # (day/night and weekday/weekend contrast, summer dip...); it's never
+    # applied on its own, only offered to the user to accept or correct.
+    usage_profile: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    usage_profile_suggested: Mapped[str | None] = mapped_column(String(24), nullable=True)
+
     building: Mapped["Building"] = relationship(back_populates="meters")
     readings: Mapped[list["Reading"]] = relationship(back_populates="meter", cascade="all, delete-orphan")

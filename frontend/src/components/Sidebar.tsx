@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
-import QualityCriteriaDialog from "./QualityCriteriaDialog";
 import { useQualifAI } from "../context/QualifAIContext";
 
 // Pas d'entrée de menu pour "Traitements & reconstructions" : cette étape
@@ -19,7 +18,6 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const [version, setVersion] = useState<string | null>(null);
-  const [criteriaOpen, setCriteriaOpen] = useState(false);
   const qualifAI = useQualifAI();
 
   useEffect(() => {
@@ -93,14 +91,6 @@ export default function Sidebar() {
           className="h-28 w-full object-cover object-bottom opacity-90"
         />
         <div className="px-3 pb-5 pt-3">
-          <button
-            type="button"
-            onClick={() => setCriteriaOpen(true)}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-300 hover:bg-white/5 hover:text-white"
-          >
-            <IconGear className="h-5 w-5 shrink-0" />
-            <span>Critères de détection</span>
-          </button>
           <a
             href="#"
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-white/5 hover:text-white"
@@ -111,7 +101,6 @@ export default function Sidebar() {
           {version && <p className="mt-2 px-3 text-[11px] text-slate-500">{version}</p>}
         </div>
       </div>
-      <QualityCriteriaDialog open={criteriaOpen} onClose={() => setCriteriaOpen(false)} />
     </aside>
   );
 }
@@ -127,10 +116,9 @@ function AISwitch({
   onChange: (value: boolean) => void;
   disabled?: boolean;
 }) {
-  // A plain native checkbox, like the one already used for a boolean
-  // setting in QualityCriteriaDialog — simpler and more consistent with
-  // the rest of the app than a bespoke pill-switch, which never stopped
-  // looking out of place here however it was restyled.
+  // A plain native checkbox — simpler and more consistent with the rest
+  // of the app than a bespoke pill-switch, which never stopped looking
+  // out of place here however it was restyled.
   return (
     <label
       className={clsx(
@@ -199,19 +187,6 @@ function IconDownload({ className }: { className?: string }) {
       <path d="M12 4v11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path d="M7.5 11 12 15.5 16.5 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M5 18.5h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-function IconGear({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className}>
-      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
-      <path
-        d="M12 3.5v2M12 18.5v2M20.5 12h-2M5.5 12h-2M17.5 6.5l-1.4 1.4M7.9 16.1l-1.4 1.4M17.5 17.5l-1.4-1.4M7.9 7.9 6.5 6.5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
     </svg>
   );
 }

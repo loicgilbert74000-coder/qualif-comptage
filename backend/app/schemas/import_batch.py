@@ -39,6 +39,12 @@ class MeterQualitySummary(BaseModel):
     missing_count: int
     quality_pct: float
     saved: bool = False  # this meter's curve has already been enregistrée (see MeterValidation)
+    usage_profile: str | None = None            # confirmed usage category (logement/tertiaire/scolaire/production)
+    usage_profile_suggested: str | None = None  # engine's own guess, pending confirmation
+
+
+class UsageProfileUpdate(BaseModel):
+    profile: str | None = None  # None clears it back to "indéterminé"
 
 
 class AnomalyOut(BaseModel):

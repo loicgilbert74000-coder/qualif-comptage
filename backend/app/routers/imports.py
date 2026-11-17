@@ -22,6 +22,7 @@ from app.schemas.import_batch import (
     ValidateMeterResponse,
     CorrectionOption,
     CorrectionPreviewPoint,
+    UsageProfileUpdate,
 )
 from app.services import import_service
 from app.services.diagnosis_engine import diagnose
@@ -169,6 +170,8 @@ def get_import(batch_id: UUID, db: Session = Depends(get_db)):
                 missing_count=missing,
                 quality_pct=round(valid / total * 100, 1) if total else 0.0,
                 saved=m.id in saved_meter_ids,
+                usage_profile=m.usage_profile,
+                usage_profile_suggested=m.usage_profile_suggested,
             )
         )
 
@@ -353,6 +356,50 @@ def validate_meter(batch_id: UUID, meter_id: UUID, db: Session = Depends(get_db)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return ValidateMeterResponse(**result)
+
+
+@router.put("/{batch_id}/meters/{meter_id}/usage-profile", response_model=MeterQualitySummary)
+def set_usage_profile(batch_id: UUID, meter_id: UUID, payload: UsageProfileUpdate, db: Session = Depends(get_db)):
+    """Confirms (or clears) a meter's usage category — accepting the
+    engine's own suggestion, or picking a different one by hand. Re-runs
+    this dossier's analysis immediately so the change in detection
+    thresholds is reflected right away, then returns this meter's refreshed
+    summary (the frontend reloads the rest of the dossier on its own)."""
+    batch = _get_batch_or_404(db, batch_id)
+    try:
+        meter = import_service.set_meter_usage_profile(db, batch, meter_id, payload.profile)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    readings = db.query(Reading).filter(Reading.meter_id == meter.id, Reading.import_batch_id == batch_id).all()
+    total = len(readings)
+    valid = sum(1 for r in readings if r.quality == ReadingQuality.VALIDE)
+    incoh = sum(1 for r in readings if r.quality == ReadingQuality.INCOHERENCE)
+    missing = sum(1 for r in readings if r.quality == ReadingQuality.MANQUANTE)
+    from app.services.quality_engine import infer_granularity
+    import pandas as pd
+
+    gran = infer_granularity(pd.Series([r.timestamp for r in readings])) if readings else "journaliere"
+    saved_meter_ids = {
+        row[0] for row in db.query(MeterValidation.meter_id).filter(MeterValidation.import_batch_id == batch_id)
+    }
+    return MeterQualitySummary(
+        meter_id=meter.id,
+        meter_code=meter.code,
+        fluid_type=meter.fluid_type,
+        role=meter.role,
+        measurement_kind=meter.measurement_kind,
+        unit=meter.unit,
+        granularity=gran,
+        total_expected=total,
+        valid_count=valid,
+        incoherence_count=incoh,
+        missing_count=missing,
+        quality_pct=round(valid / total * 100, 1) if total else 0.0,
+        saved=meter.id in saved_meter_ids,
+        usage_profile=meter.usage_profile,
+        usage_profile_suggested=meter.usage_profile_suggested,
+    )
 
 
 @router.get("/{batch_id}/export")

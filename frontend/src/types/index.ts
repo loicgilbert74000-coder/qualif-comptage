@@ -51,6 +51,8 @@ export interface ImportPreview {
   unmapped_files: Record<string, UnmappedFileInfo>;
 }
 
+export type UsageProfile = "logement" | "tertiaire" | "scolaire" | "production";
+
 export interface MeterQualitySummary {
   meter_id: string;
   meter_code: string;
@@ -65,6 +67,15 @@ export interface MeterQualitySummary {
   missing_count: number;
   quality_pct: number;
   saved: boolean;
+  /** Usage confirmé par l'utilisateur (ou null si jamais confirmé) — c'est
+   * cette valeur, et non la suggestion, qui détermine le jeu de critères
+   * de détection réellement appliqué à ce compteur. */
+  usage_profile: UsageProfile | null;
+  /** Meilleure estimation automatique de l'appli, déduite de la forme de
+   * la courbe du compteur — une simple proposition, jamais appliquée
+   * silencieusement : seule usage_profile, une fois confirmé par
+   * l'utilisateur, change le comportement. */
+  usage_profile_suggested: UsageProfile | null;
 }
 
 export interface ImportBatchDetail {
@@ -226,3 +237,40 @@ export interface ReadingFilterOptions {
 }
 
 export type ExportFormat = "csv" | "json";
+
+export interface CriteriaProfile {
+  id: number;
+  measurement_kind: string;
+  usage_profile: string;
+  label: string;
+  spike_deviation_pct: number;
+  drop_deviation_pct: number;
+  reference_window_periods: number;
+  flatline_min_run: number;
+  allow_negative_values: boolean;
+  historical_min_points: number;
+  robust_mad_multiplier: number;
+  historical_extreme_ratio: number;
+  zero_active_min_history: number;
+  seasonal_activity_min_history: number;
+  timestamp_tolerance_pct: number;
+}
+
+export type CriteriaProfileUpdate = Partial<
+  Omit<CriteriaProfile, "id" | "measurement_kind" | "usage_profile" | "label">
+>;
+
+export const USAGE_PROFILE_LABELS: Record<string, string> = {
+  "indéterminé": "Profil par défaut",
+  logement: "Logement",
+  tertiaire: "Tertiaire / administratif",
+  scolaire: "Scolaire",
+  production: "Production (PV, cogénération…)",
+};
+
+export const MEASUREMENT_KIND_LABELS: Record<string, string> = {
+  "indéterminé": "Tout type de compteur",
+  index: "Compteur à index cumulé",
+  consommation: "Compteur de courbe de charge",
+  livraison: "Compteur par livraison",
+};
