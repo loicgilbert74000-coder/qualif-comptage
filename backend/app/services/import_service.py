@@ -581,10 +581,20 @@ def run_quality_analysis(db: Session, batch: ImportBatch) -> list[MeterQualityRe
             r.timestamp: r
             for r in db.query(Reading).filter(Reading.meter_id == meter_id, Reading.import_batch_id == batch.id)
         }
-        for ts, quality in flag_by_ts.items():
-            r = existing.get(ts)
-            if r is not None:
-                r.quality = ReadingQuality(quality)
+        # Setting `.quality` on each ORM instance one by one and letting
+        # commit() flush them relies on SQLAlchemy's unit-of-work noticing
+        # they all share the same changed column to batch the UPDATEs —
+        # which it doesn't always do. `bulk_update_mappings` always issues
+        # one batched statement, which matters here: a year of 15-minute
+        # readings is ~35 000 rows per meter, and this runs on every import
+        # and every "Réanalyser".
+        quality_updates = [
+            {"id": r.id, "quality": ReadingQuality(quality)}
+            for ts, quality in flag_by_ts.items()
+            if (r := existing.get(ts)) is not None
+        ]
+        if quality_updates:
+            db.bulk_update_mappings(Reading, quality_updates)
 
         for a in report.anomalies:
             db.add(
