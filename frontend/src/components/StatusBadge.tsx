@@ -4,7 +4,7 @@ import type { ImportStatus } from "../types";
 const LABELS: Record<ImportStatus, string> = {
   en_cours: "Analyse en cours",
   a_valider: "À valider",
-  a_corriger: "À corriger",
+  a_corriger: "À traiter",
   valide: "Validé",
   refuse: "Refusé",
   deja_traite: "Déjà traité",

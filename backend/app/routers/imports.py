@@ -90,6 +90,8 @@ async def create_import(
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - defensive: never surface a raw 500 for a bad file
+        raise HTTPException(400, f"Le fichier n'a pas pu être importé : {exc}") from exc
     return _batch_summary(db, batch)
 
 
@@ -125,6 +127,8 @@ async def preview_import(
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - defensive: never surface a raw 500 for a bad file
+        raise HTTPException(400, f"Le fichier n'a pas pu être analysé : {exc}") from exc
 
 
 @router.get("", response_model=list[ImportBatchSummary])

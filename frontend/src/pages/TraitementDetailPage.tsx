@@ -173,11 +173,26 @@ export default function TraitementDetailPage() {
         navigate(`/traitements/${batchId}/export`);
         return;
       }
-      await refresh();
-      // Jump straight to the next meter that still needs treatment, so
-      // several meters can be saved one after another without having to
-      // hunt for the next one manually.
-      const next = metersWithPending.find((m) => m.meter_id !== selectedMeterId);
+      // Fetch fresh rather than relying on metersWithPending/pendingByMeter
+      // from this render: those were computed before this meter was saved,
+      // so they're stale by the time this line runs (refresh() below only
+      // updates state for the *next* render, it doesn't rewind time on
+      // variables already captured in this closure).
+      const [freshDetail, freshAnomalies] = await Promise.all([api.getImport(batchId), api.getAnomalies(batchId)]);
+      const freshPendingByMeter = new Map<string, number>();
+      for (const a of freshAnomalies) {
+        if (a.resolution !== "en_attente") continue;
+        freshPendingByMeter.set(a.meter_id, (freshPendingByMeter.get(a.meter_id) ?? 0) + 1);
+      }
+      const notYetSaved = freshDetail.meters.filter((m) => !m.saved && m.meter_id !== selectedMeterId);
+      // Jump straight to the next meter, so several meters can be qualified
+      // one after another without hunting for the next one manually.
+      // Prefer one that's already fully treated (0 zones en attente) — it
+      // can be qualified right away — before one that still needs work.
+      const next =
+        notYetSaved.find((m) => (freshPendingByMeter.get(m.meter_id) ?? 0) === 0) ?? notYetSaved[0];
+      setDetail(freshDetail);
+      setAnomalies(freshAnomalies);
       if (next) {
         setSelectedMeterId(next.meter_id);
         selectZone(null);

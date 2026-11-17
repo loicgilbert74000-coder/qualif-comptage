@@ -147,6 +147,15 @@ export default function QualityChart({
   const dragStateRef = useRef<{ rect: DOMRect; startFrac: number } | null>(null);
   const [dragVisual, setDragVisual] = useState<[number, number] | null>(null);
 
+  // Drag-to-pan with the left mouse button held down, once zoomed in — a
+  // plain left click still selects a zone (handled by the separate "click"
+  // listener below), so this only shifts the visible range when the mouse
+  // has actually moved; a short click with no movement leaves the range
+  // alone and lets that click listener fire normally.
+  const panStateRef = useRef<{ rect: DOMRect; startClientX: number; startRange: [number, number] } | null>(null);
+  const didPanRef = useRef(false);
+  const suppressClickRef = useRef(false);
+
   function fracFromClientX(clientX: number, rect: DOMRect) {
     const usableWidth = Math.max(rect.width - MARGIN.left - MARGIN.right, 1);
     const f = (clientX - rect.left - MARGIN.left) / usableWidth;
@@ -196,7 +205,21 @@ export default function QualityChart({
     }
 
     function onMouseDown(e: globalThis.MouseEvent) {
-      if (e.button !== 2) return; // right button only
+      if (e.button === 0) {
+        // Left button: pan if the user drags, select a zone if they don't
+        // (that's the separate "click" listener below) — only worth
+        // tracking once there's something to pan into view.
+        const lastIdx = Math.max(pointsLengthRef.current - 1, 0);
+        const [s, en] = rangeRef.current;
+        if (en - s >= lastIdx) return; // not zoomed in: nothing to pan
+        const rect = el!.getBoundingClientRect();
+        panStateRef.current = { rect, startClientX: e.clientX, startRange: [s, en] };
+        didPanRef.current = false;
+        window.addEventListener("mousemove", onPanMove);
+        window.addEventListener("mouseup", onPanUp);
+        return;
+      }
+      if (e.button !== 2) return; // right button only, for drag-to-zoom
       e.preventDefault();
       const rect = el!.getBoundingClientRect();
       const startFrac = fracFromClientX(e.clientX, rect);
@@ -204,6 +227,38 @@ export default function QualityChart({
       setDragVisual([startFrac, startFrac]);
       window.addEventListener("mousemove", onMouseMove);
       window.addEventListener("mouseup", onMouseUp);
+    }
+
+    function onPanMove(e: globalThis.MouseEvent) {
+      const pan = panStateRef.current;
+      if (!pan) return;
+      const dxPx = e.clientX - pan.startClientX;
+      if (Math.abs(dxPx) > 3) didPanRef.current = true;
+      const [s0, en0] = pan.startRange;
+      const span = en0 - s0;
+      const n = span + 1;
+      const usableWidth = Math.max(pan.rect.width - MARGIN.left - MARGIN.right, 1);
+      const pxPerIndex = n > 1 ? usableWidth / (n - 1) : usableWidth;
+      const dIndex = Math.round(-dxPx / pxPerIndex);
+      const lastIdx = Math.max(pointsLengthRef.current - 1, 0);
+      let newStart = s0 + dIndex;
+      let newEnd = en0 + dIndex;
+      if (newStart < 0) {
+        newEnd -= newStart;
+        newStart = 0;
+      }
+      if (newEnd > lastIdx) {
+        newStart -= newEnd - lastIdx;
+        newEnd = lastIdx;
+      }
+      setRange([Math.max(0, newStart), newEnd]);
+    }
+
+    function onPanUp() {
+      window.removeEventListener("mousemove", onPanMove);
+      window.removeEventListener("mouseup", onPanUp);
+      panStateRef.current = null;
+      if (didPanRef.current) suppressClickRef.current = true;
     }
 
     function onMouseMove(e: globalThis.MouseEvent) {
@@ -255,6 +310,8 @@ export default function QualityChart({
       el.removeEventListener("dblclick", onDoubleClick);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("mousemove", onPanMove);
+      window.removeEventListener("mouseup", onPanUp);
     };
   }, []);
 
@@ -275,7 +332,7 @@ export default function QualityChart({
   const [hover, setHover] = useState<{ x: number; y: number; i: number } | null>(null);
 
   function onMouseMoveReact(e: React.MouseEvent<HTMLDivElement>) {
-    if (dragStateRef.current || visiblePoints.length === 0) return;
+    if (dragStateRef.current || panStateRef.current || visiblePoints.length === 0) return;
     const rect = containerRef.current!.getBoundingClientRect();
     const plotW = Math.max(rect.width - MARGIN.left - MARGIN.right, 1);
     const relX = e.clientX - rect.left - MARGIN.left;
@@ -289,7 +346,7 @@ export default function QualityChart({
   }
 
   function onMouseLeaveReact() {
-    if (!dragStateRef.current) setHover(null);
+    if (!dragStateRef.current && !panStateRef.current) setHover(null);
   }
 
   // --- clickable problem zones ---
@@ -319,6 +376,10 @@ export default function QualityChart({
     const el = containerRef.current;
     if (!el) return;
     function onClick(e: globalThis.MouseEvent) {
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false; // this click just ended a pan drag: ignore it
+        return;
+      }
       if (!onSelectZoneRef.current) return;
       const rect = el!.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -668,7 +729,8 @@ export default function QualityChart({
     <div>
       <div className="mb-1.5 flex items-center justify-between">
         <p className="text-xs text-gray-400">
-          Molette pour zoomer · clic droit maintenu pour sélectionner une zone · double-clic pour réinitialiser
+          Molette pour zoomer · clic gauche maintenu pour déplacer la vue (une fois zoomé) · clic droit maintenu
+          pour sélectionner une zone · double-clic pour réinitialiser
         </p>
         {isZoomed && (
           <button
@@ -681,7 +743,7 @@ export default function QualityChart({
       </div>
       <div
         ref={containerRef}
-        className={`relative w-full select-none ${height ?? "h-80"} ${zones.length > 0 ? "cursor-pointer" : ""}`}
+        className={`relative w-full select-none ${height ?? "h-80"} ${isZoomed ? "cursor-grab active:cursor-grabbing" : zones.length > 0 ? "cursor-pointer" : ""}`}
         style={{ touchAction: "none", overscrollBehavior: "contain" }}
         onMouseMove={onMouseMoveReact}
         onMouseLeave={onMouseLeaveReact}

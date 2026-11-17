@@ -93,6 +93,14 @@ export default function QualificationPage() {
     });
   }
 
+  function selectAllMeters() {
+    if (preview) setSelectedCodes(new Set(preview.meters.map((m) => m.meter_code)));
+  }
+
+  function deselectAllMeters() {
+    setSelectedCodes(new Set());
+  }
+
   async function submitMapping(mapping: Record<string, string>) {
     if (!pendingFiles) return;
     setPreviewing(true);
@@ -165,6 +173,8 @@ export default function QualificationPage() {
           preview={preview}
           selectedCodes={selectedCodes}
           onToggle={toggleMeter}
+          onSelectAll={selectAllMeters}
+          onDeselectAll={deselectAllMeters}
           onCancel={cancelPreview}
           onConfirm={confirmImport}
           onSubmitMapping={submitMapping}
@@ -401,6 +411,8 @@ function ImportPreviewModal({
   preview,
   selectedCodes,
   onToggle,
+  onSelectAll,
+  onDeselectAll,
   onCancel,
   onConfirm,
   onSubmitMapping,
@@ -410,6 +422,8 @@ function ImportPreviewModal({
   preview: ImportPreview;
   selectedCodes: Set<string>;
   onToggle: (code: string) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
   onCancel: () => void;
   onConfirm: () => void;
   onSubmitMapping: (mapping: Record<string, string>) => void;
@@ -489,8 +503,30 @@ function ImportPreviewModal({
           {preview.meters.length === 0 ? (
             <p className="py-6 text-center text-sm text-gray-400">Aucun compteur détecté dans ce fichier.</p>
           ) : (
-            <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
-              {preview.meters.map((m) => (
+            <>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-xs text-gray-500">
+                  {selectedCodes.size} / {preview.meters.length} sélectionné{selectedCodes.size > 1 ? "s" : ""}
+                </span>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={onSelectAll}
+                    className="text-xs font-medium text-geneva-700 hover:underline"
+                  >
+                    Tout sélectionner
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onDeselectAll}
+                    className="text-xs font-medium text-geneva-700 hover:underline"
+                  >
+                    Tout désélectionner
+                  </button>
+                </div>
+              </div>
+              <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+                {preview.meters.map((m) => (
                 <label
                   key={m.meter_code}
                   className="flex cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-gray-50"
@@ -517,8 +553,9 @@ function ImportPreviewModal({
                     </p>
                   </div>
                 </label>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
 

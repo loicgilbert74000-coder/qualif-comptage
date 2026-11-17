@@ -211,8 +211,20 @@ def parse_csv_bytes(
     sample = "\n".join(text.splitlines()[:5])
     delim = delimiter or detect_delimiter(sample)
 
-    df = pd.read_csv(io.StringIO(text), sep=delim, dtype=str, keep_default_na=False)
+    try:
+        df = pd.read_csv(io.StringIO(text), sep=delim, dtype=str, keep_default_na=False)
+    except Exception as exc:  # pragma: no cover - genuinely unreadable/malformed file
+        # Anything pandas itself refuses (inconsistent column counts between
+        # rows, a binary file mistakenly named .csv, ...) must still surface
+        # as a clear message rather than an unhandled 500 — callers only
+        # catch ValueError to turn it into the manual-mapping screen or a
+        # 400 response.
+        raise ValueError(
+            f"Impossible de lire {filename} comme un fichier CSV : {exc}"
+        ) from exc
     df.columns = [c.strip() for c in df.columns]
+    if df.shape[1] == 0 or len(df.columns) == 0:
+        raise ValueError(f"{filename} ne contient aucune colonne exploitable.")
 
     mapping = dict(column_mapping) if column_mapping else detect_column_mapping(list(df.columns))
 

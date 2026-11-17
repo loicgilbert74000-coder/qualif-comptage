@@ -175,6 +175,7 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
                     {meters.map((m) => (
                       <option key={m.meter_id} value={m.meter_id}>
                         {m.meter_code} ({m.fluid_type} · {m.role} · {m.measurement_kind})
+                        {m.saved ? " — qualifié" : ""}
                       </option>
                     ))}
                   </select>
