@@ -689,7 +689,15 @@ def validate_and_reconstruct(db: Session, batch: ImportBatch) -> dict:
 
         granularity = infer_granularity(pd.Series(df["timestamp"]))
         expected_index = _build_expected_index(df["timestamp"].min(), df["timestamp"].max(), granularity)
-        expected_index = expected_index.union(pd.DatetimeIndex(df["timestamp"])).sort_values()
+        # pandas' Index.union only dedupes values that differ between the two
+        # sides — a timestamp already duplicated *within* df["timestamp"]
+        # (two raw readings sharing the exact same instant: a re-imported
+        # overlap, a data-entry duplicate, or the one ambiguous local hour
+        # each year when clocks go back) survives the union as a repeat, so
+        # expected_index itself ends up non-unique. Every downstream
+        # .reindex()/assignment in reconstruct_series requires a unique
+        # index, so drop the repeat here, once, right after building it.
+        expected_index = expected_index.union(pd.DatetimeIndex(df["timestamp"])).drop_duplicates().sort_values()
         series = df.set_index("timestamp")["value"]
         series = series[~series.index.duplicated(keep="last")]
         aligned = series.reindex(expected_index)
@@ -838,7 +846,12 @@ def validate_meter(db: Session, batch: ImportBatch, meter_id: uuid.UUID) -> dict
 
     granularity = infer_granularity(pd.Series(df["timestamp"]))
     expected_index = _build_expected_index(df["timestamp"].min(), df["timestamp"].max(), granularity)
-    expected_index = expected_index.union(pd.DatetimeIndex(df["timestamp"])).sort_values()
+    # See the identical comment in reanalyze_batch (above): Index.union
+    # does not dedupe a timestamp that was already duplicated within
+    # df["timestamp"] itself, so expected_index must be deduplicated
+    # explicitly or every downstream reindex/assignment on a non-unique
+    # index raises pandas.errors.InvalidIndexError.
+    expected_index = expected_index.union(pd.DatetimeIndex(df["timestamp"])).drop_duplicates().sort_values()
     series = df.set_index("timestamp")["value"]
     series = series[~series.index.duplicated(keep="last")]
     aligned = series.reindex(expected_index)
