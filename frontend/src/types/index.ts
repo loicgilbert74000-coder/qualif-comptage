@@ -202,6 +202,7 @@ export interface HistoryEntry {
 
 export interface SimplifiedReadingRow {
   id: string;
+  meter_id: string;
   meter_code: string;
   building: string;
   fluid_type: string | null;

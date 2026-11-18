@@ -13,6 +13,7 @@ import io
 import json
 import re
 from datetime import datetime
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,6 +24,13 @@ from app.database import get_db
 from app.models import Base, Reading, Meter, Building, MeterStatus
 
 router = APIRouter(prefix="/api/db", tags=["database"])
+
+# This page is meant to be "the database" as a non-technical user thinks of
+# it — the readings that have actually been checked and accepted — not
+# every row the app happens to hold, which includes meters still mid-review
+# or whose batch was refused. Hard filter, not just a dropdown choice: it
+# applies even when no "validity" filter is selected.
+_QUALIFIED_STATUSES = (MeterStatus.VALIDE, MeterStatus.CORRIGE)
 
 # Built once at import time from every model registered on Base — used
 # only by the wipe endpoint below, which still clears every table
@@ -67,6 +75,10 @@ def _apply_filters(
     exactly when it matches the on-screen filtered table — the export is
     meant to download exactly what the filters currently show, nothing more
     or less."""
+    # Always applied, independently of whatever the "validity" dropdown is
+    # set to — this page only ever shows qualified data (see
+    # _QUALIFIED_STATUSES above the router).
+    query = query.filter(Meter.status.in_(_QUALIFIED_STATUSES))
     if meter_code:
         query = query.filter(Meter.code == meter_code)
     if building:
@@ -75,9 +87,11 @@ def _apply_filters(
         query = query.filter(Meter.fluid_type == fluid_type)
     if validity:
         try:
-            query = query.filter(Meter.status == MeterStatus(validity))
+            status = MeterStatus(validity)
         except ValueError:
-            pass  # unknown value: ignored rather than erroring on a stale filter
+            status = None  # unknown value: ignored rather than erroring on a stale filter
+        if status in _QUALIFIED_STATUSES:
+            query = query.filter(Meter.status == status)
     if timestamp_from:
         query = query.filter(Reading.timestamp >= _from_utc_iso(timestamp_from))
     if timestamp_to:
@@ -88,6 +102,7 @@ def _apply_filters(
 def _row_out(reading: Reading, meter: Meter, building: Building) -> dict:
     return {
         "id": str(reading.id),
+        "meter_id": str(meter.id),
         "meter_code": meter.code,
         "building": building.name,
         "fluid_type": meter.fluid_type,
@@ -116,6 +131,30 @@ def wipe_database(db: Session = Depends(get_db)):
         if model is not None:
             db.query(model).delete(synchronize_session=False)
     db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/meters/{meter_id}")
+def delete_meter(meter_id: UUID, db: Session = Depends(get_db)):
+    """Remove one meter entirely — its readings, anomalies and validation
+    history go with it (meter_id's FKs all cascade; see database.py for why
+    that now actually fires on SQLite too), and its building is removed as
+    well if this was the last meter it had. Every import batch that fed
+    this meter is left as-is: only the meter itself (and what hangs off it)
+    is deleted, not the dossiers that happened to mention it — a batch can
+    still cover other meters that are unaffected by this deletion."""
+    meter = db.query(Meter).get(meter_id)
+    if meter is None:
+        raise HTTPException(404, "Compteur introuvable.")
+    building_id = meter.building_id
+    db.delete(meter)
+    db.commit()
+    has_other_meters = db.query(Meter.id).filter(Meter.building_id == building_id).first() is not None
+    if not has_other_meters:
+        building = db.query(Building).get(building_id)
+        if building is not None:
+            db.delete(building)
+            db.commit()
     return {"status": "ok"}
 
 
@@ -165,11 +204,18 @@ def list_filter_options(db: Session = Depends(get_db)):
 
     Joined through Reading on purpose: a Meter/Building row can outlive
     every one of its readings (deleting a dossier removes its readings but
-    deliberately leaves the meters/buildings alone, in case another import
-    still references them — see delete_batch), and such a meter has nothing
-    to show in this view. Listing it as a filter choice would offer a
-    filter that always returns zero rows, which is what was happening."""
-    with_readings = db.query(Reading.meter_id).distinct().subquery()
+    may leave the meters/buildings alone if they were ever qualified — see
+    delete_batch), and such a meter has nothing to show in this view.
+    Listing it as a filter choice would offer a filter that always returns
+    zero rows, which is what was happening. Also restricted to qualified
+    meters, like the view itself (see _QUALIFIED_STATUSES)."""
+    with_readings = (
+        db.query(Reading.meter_id)
+        .join(Meter, Meter.id == Reading.meter_id)
+        .filter(Meter.status.in_(_QUALIFIED_STATUSES))
+        .distinct()
+        .subquery()
+    )
     meters_q = (
         db.query(Meter.code, Building.name)
         .join(Building, Building.id == Meter.building_id)
@@ -194,7 +240,7 @@ def list_filter_options(db: Session = Depends(get_db)):
         "meter_codes": [m for m, _ in meters_q.all()],
         "buildings": [b for (b,) in buildings_q.all()],
         "fluid_types": [f for (f,) in fluids_q.all()],
-        "validities": [s.value for s in MeterStatus],
+        "validities": [s.value for s in _QUALIFIED_STATUSES],
     }
 
 

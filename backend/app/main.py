@@ -1,8 +1,10 @@
+import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy import inspect, text
@@ -14,7 +16,24 @@ from app.routers import imports, buildings, history, settings_router, database_v
 from app.services.criteria_profiles import seed_default_profiles
 from app._version import BUILD_VERSION
 
+log = logging.getLogger("app")
+
 app = FastAPI(title="Qualification des données de comptage", version="0.1.0")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    # Anything that reaches here is a bug, not a user mistake (those already
+    # raise HTTPException/ValueError, handled where they occur) — log the
+    # full traceback so it's actually diagnosable (see desktop_main.py's
+    # uvicorn log_config=None for why this previously vanished entirely in
+    # the desktop build), and return a message the frontend can show instead
+    # of the bare, silent "Internal Server Error" the default handler gives.
+    log.exception("Erreur non gérée sur %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Une erreur inattendue s'est produite côté serveur. Voir app.log pour le détail."},
+    )
 
 app.add_middleware(
     CORSMiddleware,

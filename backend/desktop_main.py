@@ -179,7 +179,19 @@ def main() -> None:
 
         def _run_server() -> None:
             try:
-                uvicorn.run(app, host="127.0.0.1", port=APP_PORT, log_level="warning")
+                # log_config=None stops uvicorn installing its OWN logging
+                # setup (which, by default, attaches its error/access loggers
+                # directly to the console — i.e. the stderr we redirect to
+                # devnull a few lines above, for the windowed build). Left at
+                # its default, every unhandled exception in a request (the
+                # exact thing someone needs app.log for when something goes
+                # wrong) was silently discarded instead of ending up in the
+                # log file. With no config of its own, "uvicorn.error" and
+                # "uvicorn.access" fall back to plain Python loggers that
+                # propagate to the root logger — the one `logging.basicConfig`
+                # already pointed at app.log above — so those messages land
+                # there instead.
+                uvicorn.run(app, host="127.0.0.1", port=APP_PORT, log_level="warning", log_config=None)
             except OSError:
                 # Most likely WinError 10048 / "address already in use":
                 # another process grabbed the port between our check above

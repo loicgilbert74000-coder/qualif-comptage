@@ -4,15 +4,30 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Building, Meter
+from app.models import Building, Meter, MeterStatus
 from app.schemas.building import BuildingOut, BuildingCreate, MeterOut
 
 router = APIRouter(prefix="/api/buildings", tags=["buildings"])
 
+# A meter exists in the database from the moment its code is first seen in
+# an import — long before anyone has reviewed or qualified it. Showing it
+# here right away would mean "Bâtiments et compteurs" lists data that's
+# still mid-review (or, for a refused import, not usable at all), so this
+# page — like the "Base de données" viewer — only ever shows meters that
+# have actually been qualified at least once.
+_QUALIFIED_STATUSES = (MeterStatus.VALIDE, MeterStatus.CORRIGE)
+
 
 @router.get("", response_model=list[BuildingOut])
 def list_buildings(db: Session = Depends(get_db)):
-    return db.query(Building).order_by(Building.code).all()
+    return (
+        db.query(Building)
+        .join(Meter, Meter.building_id == Building.id)
+        .filter(Meter.status.in_(_QUALIFIED_STATUSES))
+        .distinct()
+        .order_by(Building.code)
+        .all()
+    )
 
 
 @router.post("", response_model=BuildingOut)
@@ -36,4 +51,9 @@ def get_building(building_id: UUID, db: Session = Depends(get_db)):
 
 @router.get("/{building_id}/meters", response_model=list[MeterOut])
 def list_building_meters(building_id: UUID, db: Session = Depends(get_db)):
-    return db.query(Meter).filter(Meter.building_id == building_id).order_by(Meter.code).all()
+    return (
+        db.query(Meter)
+        .filter(Meter.building_id == building_id, Meter.status.in_(_QUALIFIED_STATUSES))
+        .order_by(Meter.code)
+        .all()
+    )

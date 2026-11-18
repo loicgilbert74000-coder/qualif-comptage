@@ -22,6 +22,10 @@ export default function DatabasePage() {
   const [wiping, setWiping] = useState(false);
   const [filters, setFilters] = useState<ReadingFilters>(EMPTY_FILTERS);
   const [filterOptions, setFilterOptions] = useState<ReadingFilterOptions | null>(null);
+  // Which meter's delete is being confirmed (meter_id), if any — only one
+  // row's confirmation is shown at a time.
+  const [confirmingMeterId, setConfirmingMeterId] = useState<string | null>(null);
+  const [deletingMeterId, setDeletingMeterId] = useState<string | null>(null);
 
   useEffect(() => {
     api.getReadingFilterOptions().then(setFilterOptions).catch(() => {});
@@ -59,6 +63,18 @@ export default function DatabasePage() {
   }
 
   const activeFilterCount = Object.keys(filters).length;
+
+  function deleteMeter(meterId: string) {
+    setDeletingMeterId(meterId);
+    api
+      .deleteMeter(meterId)
+      .then(() => {
+        setConfirmingMeterId(null);
+        refreshAll();
+      })
+      .catch((e) => setError((e as Error).message || "La suppression du compteur a échoué."))
+      .finally(() => setDeletingMeterId(null));
+  }
 
   function wipeDatabase() {
     setWiping(true);
@@ -141,6 +157,7 @@ export default function DatabasePage() {
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Unité</th>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Indice de fiabilité</th>
                   <th className="whitespace-nowrap px-3 py-2 font-medium">Validité</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium">Actions</th>
                 </tr>
                 <tr className="border-t border-gray-200 bg-white">
                   <th className="px-3 py-1.5 font-normal">
@@ -213,12 +230,13 @@ export default function DatabasePage() {
                       ))}
                     </select>
                   </th>
+                  <th className="px-3 py-1.5" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {!loading && data && data.rows.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
+                    <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
                       Aucun relevé.
                     </td>
                   </tr>
@@ -239,6 +257,37 @@ export default function DatabasePage() {
                       <span className={clsx("rounded-full px-2 py-0.5 text-xs font-medium", VALIDITY_STYLE[row.validity])}>
                         {VALIDITY_LABEL[row.validity] ?? row.validity}
                       </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5">
+                      {confirmingMeterId === row.meter_id ? (
+                        <span className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={deletingMeterId === row.meter_id}
+                            onClick={() => deleteMeter(row.meter_id)}
+                            className="rounded-md bg-red-600 px-2 py-0.5 font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                          >
+                            {deletingMeterId === row.meter_id ? "…" : "Confirmer"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingMeterId === row.meter_id}
+                            onClick={() => setConfirmingMeterId(null)}
+                            className="rounded-md border border-gray-300 px-2 py-0.5 font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            Annuler
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          title={`Supprimer le compteur ${row.meter_code} et tous ses relevés`}
+                          onClick={() => setConfirmingMeterId(row.meter_id)}
+                          className="rounded-md border border-red-200 px-2 py-0.5 font-medium text-red-600 hover:bg-red-50"
+                        >
+                          Supprimer
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

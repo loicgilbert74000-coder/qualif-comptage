@@ -197,6 +197,8 @@ export const api = {
 
   wipeDatabase: () => request<{ status: string }>("/db/wipe", { method: "POST" }),
 
+  deleteMeter: (meterId: string) => request<{ status: string }>(`/db/meters/${meterId}`, { method: "DELETE" }),
+
   getCriteriaProfiles: () => request<CriteriaProfile[]>("/criteria-profiles"),
 
   updateCriteriaProfile: (profileId: number, payload: CriteriaProfileUpdate) =>

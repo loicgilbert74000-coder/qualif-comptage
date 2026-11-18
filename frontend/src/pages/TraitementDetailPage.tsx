@@ -241,7 +241,7 @@ export default function TraitementDetailPage() {
       <StepIndicator current={2} />
 
       <div className="flex-1 space-y-5 px-8 pb-10 pt-6">
-        <Link to="/traitements" className="text-sm text-geneva-700 hover:underline">
+        <Link to="/" className="text-sm text-geneva-700 hover:underline">
           ← Retour aux traitements
         </Link>
 
@@ -325,6 +325,20 @@ export default function TraitementDetailPage() {
                   ? "Aucune zone à traiter pour ce compteur."
                   : "Cliquez sur une zone colorée dans la courbe ci-dessous (ou dans la liste en bas de page) pour afficher le diagnostic et choisir une résolution."}
               </p>
+              {/* Même sans zone sélectionnée, on doit pouvoir tout valider en
+                  l'état d'un coup plutôt que d'être obligé d'ouvrir une zone
+                  au hasard juste pour accéder à ce bouton. */}
+              {pendingCount > 0 && (
+                <button
+                  type="button"
+                  onClick={resolveAll}
+                  disabled={busy !== null}
+                  title="Valide en l'état toutes les zones encore en attente de ce dossier"
+                  className="mt-3 rounded-lg border border-geneva-700 px-3.5 py-1.5 text-sm font-medium text-geneva-700 hover:bg-geneva-50 disabled:opacity-50"
+                >
+                  {busy === "resolve-all" ? "…" : `Valider toutes les zones en l'état (${pendingCount})`}
+                </button>
+              )}
             </div>
           )}
         </section>
