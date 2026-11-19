@@ -214,9 +214,13 @@ def preview_import(
     imported before (same mechanism as `ingest_files()`'s own
     content-hash dedup, surfaced here before the user commits to anything)."""
     content_hash = _content_hash(files)
+    # Archived (= "deleted" from the import list, see delete_batch) earlier
+    # imports don't count as a duplicate: once removed from the list, the
+    # user needs to be able to bring the same file back in for real,
+    # whatever became of its meters in the meantime.
     duplicate_of = (
         db.query(ImportBatch)
-        .filter(ImportBatch.content_hash == content_hash)
+        .filter(ImportBatch.content_hash == content_hash, ImportBatch.archived.is_(False))
         .order_by(ImportBatch.created_at)
         .first()
     )
@@ -349,9 +353,16 @@ def ingest_files(
         with open(os.path.join(batch_dir, filename), "wb") as fh:
             fh.write(content)
 
+    # Same rule as preview_import(): an archived (= "deleted" from the
+    # import list) earlier batch must never block this one as a duplicate —
+    # see the comment there. Without this, once a file's import has been
+    # removed from the list, that exact file could never be imported again:
+    # ingest_files would keep taking the short-circuit branch below forever,
+    # producing an empty DEJA_TRAITE batch with no readings and no meters to
+    # open, however many of the original meters were validated or not.
     duplicate_of = (
         db.query(ImportBatch)
-        .filter(ImportBatch.content_hash == content_hash)
+        .filter(ImportBatch.content_hash == content_hash, ImportBatch.archived.is_(False))
         .order_by(ImportBatch.created_at)
         .first()
     )
