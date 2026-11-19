@@ -18,10 +18,11 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from sqlalchemy import func
 from sqlalchemy.orm import Query as SAQuery, Session
 
 from app.database import get_db
-from app.models import Base, Reading, Meter, Building, MeterStatus
+from app.models import Base, ImportBatch, Reading, Meter, Building, MeterStatus
 
 router = APIRouter(prefix="/api/db", tags=["database"])
 
@@ -61,9 +62,35 @@ def _from_utc_iso(iso: str) -> datetime:
     return parsed.astimezone(_SOURCE_TZ).replace(tzinfo=None)
 
 
+def _canonical_reading_ids(db: Session):
+    """A meter that was qualified, then had its import archived (see
+    delete_batch) and later reimported, ends up with two Reading rows for
+    the same instant — one kept under the archived batch (deliberately —
+    it was qualified data), one from the fresh import. This page is meant
+    to read like "the database" in plain terms, so it shows one row per
+    meter/instant rather than the raw duplicate, preferring whichever copy
+    isn't archived (and falling back to the archived one when it's the
+    only copy left)."""
+    ranked = (
+        db.query(
+            Reading.id.label("reading_id"),
+            func.row_number()
+            .over(
+                partition_by=(Reading.meter_id, Reading.timestamp),
+                order_by=(ImportBatch.archived.asc(), Reading.id.desc()),
+            )
+            .label("rn"),
+        )
+        .join(ImportBatch, ImportBatch.id == Reading.import_batch_id)
+        .subquery()
+    )
+    return db.query(ranked.c.reading_id).filter(ranked.c.rn == 1).subquery()
+
+
 def _apply_filters(
     query: SAQuery,
     *,
+    db: Session,
     meter_code: str | None,
     building: str | None,
     fluid_type: str | None,
@@ -79,6 +106,7 @@ def _apply_filters(
     # set to — this page only ever shows qualified data (see
     # _QUALIFIED_STATUSES above the router).
     query = query.filter(Meter.status.in_(_QUALIFIED_STATUSES))
+    query = query.filter(Reading.id.in_(db.query(_canonical_reading_ids(db).c.reading_id)))
     if meter_code:
         query = query.filter(Meter.code == meter_code)
     if building:
@@ -181,7 +209,7 @@ def list_readings(
         .join(Building, Building.id == Meter.building_id)
     )
     base_query = _apply_filters(
-        base_query, meter_code=meter_code, building=building, fluid_type=fluid_type,
+        base_query, db=db, meter_code=meter_code, building=building, fluid_type=fluid_type,
         validity=validity, timestamp_from=timestamp_from, timestamp_to=timestamp_to,
     )
 
@@ -270,7 +298,7 @@ def export_readings(
         .join(Building, Building.id == Meter.building_id)
     )
     base_query = _apply_filters(
-        base_query, meter_code=meter_code, building=building, fluid_type=fluid_type,
+        base_query, db=db, meter_code=meter_code, building=building, fluid_type=fluid_type,
         validity=validity, timestamp_from=timestamp_from, timestamp_to=timestamp_to,
     )
     rows_raw = base_query.order_by(Building.name, Meter.code, Reading.timestamp).all()

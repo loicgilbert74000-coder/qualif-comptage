@@ -32,7 +32,12 @@ export default function BatimentsPage() {
               >
                 <div>
                   <div className="font-semibold text-gray-900">
-                    {b.code} — {b.name}
+                    {/* lookup_site_name() falls back to the code itself when the
+                        building isn't in the OSTRAL catalogue (see
+                        _get_or_create_building) — showing "CODE — CODE" in that
+                        case reads as a copy-paste glitch, not as "nom non
+                        renseigné", so the code is shown once instead. */}
+                    {b.name === b.code ? b.code : `${b.code} — ${b.name}`}
                   </div>
                   <div className="text-xs text-gray-500">
                     {b.typology ?? "Typologie non renseignée"}

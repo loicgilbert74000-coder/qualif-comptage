@@ -513,9 +513,27 @@ def _meter_rows_df(db: Session, meter_id, batch_id) -> pd.DataFrame:
 def _all_rows_df(db: Session, meter_id) -> pd.DataFrame:
     """Every reading this meter has, across every import batch — used for
     usage-profile detection, where more history makes for a more reliable
-    guess than whatever happens to be in the batch being (re)analysed."""
-    rows = db.query(Reading).filter(Reading.meter_id == meter_id).order_by(Reading.timestamp).all()
-    return pd.DataFrame({"timestamp": [r.timestamp for r in rows], "value": [r.raw_value for r in rows]})
+    guess than whatever happens to be in the batch being (re)analysed.
+
+    A meter that was qualified, then had its import archived (see
+    delete_batch) and later reimported ends up with the same timestamps
+    twice: once under the archived batch (kept on purpose — it was
+    qualified data), once under the fresh one. Counting both would weight
+    that period twice in the detection below, so an archived batch's
+    reading loses to a live batch's reading at the same timestamp; it's
+    only kept when it's the sole copy left, same as before."""
+    rows = (
+        db.query(Reading.timestamp, Reading.raw_value, ImportBatch.archived)
+        .join(ImportBatch, ImportBatch.id == Reading.import_batch_id)
+        .filter(Reading.meter_id == meter_id)
+        .order_by(Reading.timestamp)
+        .all()
+    )
+    if not rows:
+        return pd.DataFrame({"timestamp": [], "value": []})
+    df = pd.DataFrame(rows, columns=["timestamp", "value", "archived"])
+    df = df.sort_values("archived").drop_duplicates(subset="timestamp", keep="first").sort_values("timestamp")
+    return df[["timestamp", "value"]].reset_index(drop=True)
 
 
 def _update_usage_suggestion(db: Session, meter: Meter) -> None:
@@ -1346,14 +1364,30 @@ def export_rows(db: Session, batch: ImportBatch) -> list[dict]:
 def delete_batch(db: Session, batch: ImportBatch) -> None:
     """Remove an import entry from the import panel's list (used from its
     "trop de fichiers" clean-up) — this is bookkeeping about the upload,
-    not the readings it produced. Readings, anomalies, history and
-    meter-validation rows that already made it into the database are never
-    touched here, qualified or not: only the raw file(s) kept on disk are
+    not the readings it produced. A meter that was actually qualified in
+    this batch keeps all of its readings, anomalies and validation history
+    untouched, qualified or not — only the raw file(s) kept on disk are
     deleted, and the batch row itself is archived (hidden from the list)
     rather than deleted outright, since Reading/Anomaly/MeterValidation
-    keep a NOT NULL foreign key pointing at it."""
+    keep a NOT NULL foreign key pointing at it.
+
+    But a batch nobody ever qualified anything in has nothing worth
+    keeping: its readings only ever existed to be reviewed, and now never
+    will be. Leaving them in place just means the content hash can't be
+    reimported (see preview_import/ingest_files) without ending up with
+    two copies of the exact same readings in the database — one orphaned
+    under this now-hidden batch, one from the reimport. So when this batch
+    has no MeterValidation row at all, its Reading and Anomaly rows are
+    deleted for real, same as before the "don't lose data" change ever
+    applied to it — there is no qualified data here to protect."""
     storage_path = Path(batch.storage_path) if batch.storage_path else None
     batch.archived = True
+    has_qualified_meter = (
+        db.query(MeterValidation.id).filter(MeterValidation.import_batch_id == batch.id).first() is not None
+    )
+    if not has_qualified_meter:
+        db.query(Anomaly).filter(Anomaly.import_batch_id == batch.id).delete(synchronize_session=False)
+        db.query(Reading).filter(Reading.import_batch_id == batch.id).delete(synchronize_session=False)
     db.commit()
     if storage_path and storage_path.exists():
         try:
