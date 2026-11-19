@@ -11,3 +11,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </BrowserRouter>
   </React.StrictMode>
 );
+
+// The static spinner in index.html is only there to cover the gap before
+// this point — the app itself already shows its own "Chargement…" states
+// wherever it still needs to fetch something.
+document.getElementById("initial-loader")?.remove();

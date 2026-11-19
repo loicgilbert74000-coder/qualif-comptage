@@ -187,10 +187,17 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
                 )}
               </div>
               {selectedMeter && <UsageProfilePanel meter={selectedMeter} busy={usageBusy} onConfirm={confirmUsageProfile} />}
-              {loadingSeries ? (
+              {loadingSeries && series.length === 0 ? (
                 <div className="flex h-80 items-center justify-center text-sm text-gray-400">Chargement…</div>
               ) : (
-                selectedMeter && <QualityChart points={series} unit={selectedMeter.unit} granularity={selectedMeter.granularity} />
+                selectedMeter && (
+                  <QualityChart
+                    points={series}
+                    unit={selectedMeter.unit}
+                    granularity={selectedMeter.granularity}
+                    seriesKey={selectedMeterId}
+                  />
+                )
               )}
             </div>
 

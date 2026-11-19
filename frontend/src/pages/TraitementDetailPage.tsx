@@ -343,7 +343,14 @@ export default function TraitementDetailPage() {
           )}
         </section>
 
-        {loadingSeries ? (
+        {loadingSeries && series.length === 0 ? (
+          // Only the very first load of a meter's curve has nothing to show
+          // yet. A later refresh of the SAME curve (e.g. right after
+          // applying a correctif) keeps the chart mounted with whatever
+          // points are already there instead of swapping it out for this
+          // placeholder — unmounting QualityChart would reset its zoom to
+          // whatever the fresh points happen to span, exactly the "zoom
+          // forgotten after a correctif" behaviour this avoids.
           <div className="flex h-[30rem] items-center justify-center text-sm text-gray-400">Chargement…</div>
         ) : (
           selectedMeter && (
@@ -356,6 +363,7 @@ export default function TraitementDetailPage() {
               selectedZoneId={selectedZoneId}
               onSelectZone={selectZone}
               previewPoints={previewPoints}
+              seriesKey={selectedMeterId}
             />
           )
         )}

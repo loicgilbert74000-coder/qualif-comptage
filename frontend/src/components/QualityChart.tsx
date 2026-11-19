@@ -94,6 +94,15 @@ interface Props {
   aiPreviewPoints?: AIPreviewPoint[];
   /** Selected zone outlined as the current Qualif IA analysis target. */
   aiZoneId?: string | null;
+  /**
+   * Identifies which series `points` belongs to (e.g. the meter's id).
+   * The zoom only resets when THIS changes, not whenever `points` itself
+   * does — `points` gets a new array reference on every refetch,
+   * including a plain re-fetch of the SAME meter after applying a
+   * correctif, and resetting the zoom then threw away whatever the
+   * person had zoomed into right as they corrected it.
+   */
+  seriesKey?: string | number | null;
 }
 
 export default function QualityChart({
@@ -107,16 +116,22 @@ export default function QualityChart({
   previewPoints = [],
   aiPreviewPoints = [],
   aiZoneId = null,
+  seriesKey = null,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastIndex = Math.max(points.length - 1, 0);
   const [range, setRange] = useState<[number, number]>([0, lastIndex]);
 
-  // Reset the zoom whenever a different series is loaded (new meter/import).
+  // Reset the zoom whenever a different series is loaded (new meter/import)
+  // — keyed on seriesKey, not on `points` itself, which gets a new array
+  // reference on every refetch of the SAME series too (e.g. right after
+  // applying a correctif), and resetting on that discarded whatever zoom
+  // level the person had, every single time.
   useEffect(() => {
     setRange([0, Math.max(points.length - 1, 0)]);
-  }, [points]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesKey]);
 
   const [start, end] = range;
   const visiblePoints = useMemo(() => points.slice(start, end + 1), [points, start, end]);

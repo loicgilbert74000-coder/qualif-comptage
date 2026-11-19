@@ -26,6 +26,30 @@ from pathlib import Path
 APP_PORT = 8743
 APP_TITLE = "Qualification des données de comptage"
 
+# Shown the instant the native window opens, while the local server (a cold
+# PyInstaller start — importing FastAPI/SQLAlchemy/pandas, binding the
+# port — can take a few seconds) isn't ready to answer it yet. Without
+# this, the window simply didn't exist for that whole stretch (it used to
+# be created only once _wait_until_ready() returned), so launching the app
+# looked like nothing had happened. Plain inline CSS, same spinner as the
+# one in index.html, since pywebview renders this directly with no
+# bundled stylesheet available.
+_LOADING_HTML = """
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><style>
+  html, body { margin: 0; height: 100%; background: #f9fafb;
+    font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+  .wrap { height: 100%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 14px; }
+  .spinner { width: 48px; height: 48px; border-radius: 50%;
+    border: 4px solid #eef4fb; border-top-color: #1d4b7c;
+    animation: spin 0.8s linear infinite; }
+  p { color: #374151; font-size: 14px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style></head><body>
+  <div class="wrap"><div class="spinner"></div><p>Démarrage de l'application…</p></div>
+</body></html>
+"""
+
 # A --windowed/--noconsole Windows build has no console, so sys.stdout and
 # sys.stderr are None — not a stream that silently discards writes, but the
 # absence of one. uvicorn (and other libraries) write their startup/access
@@ -163,58 +187,87 @@ def main() -> None:
 
     _safe_print(f"Qualification des données de comptage — données dans : {data_dir}")
 
-    running_version = _already_serving_version(url)
-    if running_version is not None:
-        # Another instance (or a previous launch left running in the
-        # background) is already serving the app on this port: reuse it
-        # instead of starting a second server, which would crash trying to
-        # bind the same address. If it's running an older build, say so —
-        # this is the usual reason a just-shipped fix doesn't seem to apply.
-        log.info("Un serveur local répond déjà sur %s (version %s) — réutilisation (pas de second serveur démarré)", url, running_version)
-        _warn_stale_version(running_version)
-        server_thread = None
-    else:
-        import uvicorn
-        from app.main import app
+    # Starting the server (or finding that one is already running) and
+    # waiting for it to answer now happens on its own thread, concurrently
+    # with the native window opening right away below — see _LOADING_HTML.
+    server_thread: threading.Thread | None = None
+    ready_event = threading.Event()
 
-        def _run_server() -> None:
-            try:
-                # log_config=None stops uvicorn installing its OWN logging
-                # setup (which, by default, attaches its error/access loggers
-                # directly to the console — i.e. the stderr we redirect to
-                # devnull a few lines above, for the windowed build). Left at
-                # its default, every unhandled exception in a request (the
-                # exact thing someone needs app.log for when something goes
-                # wrong) was silently discarded instead of ending up in the
-                # log file. With no config of its own, "uvicorn.error" and
-                # "uvicorn.access" fall back to plain Python loggers that
-                # propagate to the root logger — the one `logging.basicConfig`
-                # already pointed at app.log above — so those messages land
-                # there instead.
-                uvicorn.run(app, host="127.0.0.1", port=APP_PORT, log_level="warning", log_config=None)
-            except OSError:
-                # Most likely WinError 10048 / "address already in use":
-                # another process grabbed the port between our check above
-                # and this bind (e.g. a second instance launched at nearly
-                # the same time). Nothing to do here — whichever process
-                # won the bind is now serving the app, and the window below
-                # will reach it on the same URL either way.
-                log.warning("Port %s déjà occupé au moment du démarrage — un autre processus sert probablement déjà l'application.", APP_PORT)
-            except Exception:
-                log.exception("Le serveur local a planté")
+    def _start_server_and_wait() -> None:
+        nonlocal server_thread
+        running_version = _already_serving_version(url)
+        if running_version is not None:
+            # Another instance (or a previous launch left running in the
+            # background) is already serving the app on this port: reuse it
+            # instead of starting a second server, which would crash trying
+            # to bind the same address. If it's running an older build, say
+            # so — this is the usual reason a just-shipped fix doesn't seem
+            # to apply.
+            log.info("Un serveur local répond déjà sur %s (version %s) — réutilisation (pas de second serveur démarré)", url, running_version)
+            _warn_stale_version(running_version)
+        else:
+            import uvicorn
+            from app.main import app
 
-        server_thread = threading.Thread(target=_run_server, daemon=True)
-        server_thread.start()
+            def _run_server() -> None:
+                try:
+                    # log_config=None stops uvicorn installing its OWN logging
+                    # setup (which, by default, attaches its error/access loggers
+                    # directly to the console — i.e. the stderr we redirect to
+                    # devnull a few lines above, for the windowed build). Left at
+                    # its default, every unhandled exception in a request (the
+                    # exact thing someone needs app.log for when something goes
+                    # wrong) was silently discarded instead of ending up in the
+                    # log file. With no config of its own, "uvicorn.error" and
+                    # "uvicorn.access" fall back to plain Python loggers that
+                    # propagate to the root logger — the one `logging.basicConfig`
+                    # already pointed at app.log above — so those messages land
+                    # there instead.
+                    uvicorn.run(app, host="127.0.0.1", port=APP_PORT, log_level="warning", log_config=None)
+                except OSError:
+                    # Most likely WinError 10048 / "address already in use":
+                    # another process grabbed the port between our check above
+                    # and this bind (e.g. a second instance launched at nearly
+                    # the same time). Nothing to do here — whichever process
+                    # won the bind is now serving the app, and the window below
+                    # will reach it on the same URL either way.
+                    log.warning("Port %s déjà occupé au moment du démarrage — un autre processus sert probablement déjà l'application.", APP_PORT)
+                except Exception:
+                    log.exception("Le serveur local a planté")
 
-        if not _wait_until_ready(url):
-            log.error("Le serveur local n'a pas démarré à temps (30s)")
-            _safe_print("Erreur : le serveur local n'a pas démarré à temps. Voir app.log.")
+            server_thread = threading.Thread(target=_run_server, daemon=True)
+            server_thread.start()
+
+            if not _wait_until_ready(url):
+                log.error("Le serveur local n'a pas démarré à temps (30s)")
+                _safe_print("Erreur : le serveur local n'a pas démarré à temps. Voir app.log.")
+        ready_event.set()
+
+    threading.Thread(target=_start_server_and_wait, daemon=True).start()
 
     try:
         import webview  # pywebview: a native OS window around the local URL
 
         log.info("Ouverture de la fenêtre native (pywebview)")
-        window = webview.create_window(APP_TITLE, url, width=1440, height=900, min_size=(1000, 700))
+        # Opens on the loading page immediately (html=, not url=) rather
+        # than waiting here for ready_event — the window shows up right
+        # away, with something on screen, instead of the whole app seeming
+        # to not have started at all during a slow cold start.
+        window = webview.create_window(APP_TITLE, html=_LOADING_HTML, width=1440, height=900, min_size=(1000, 700))
+
+        def _switch_to_app_once_ready() -> None:
+            # Passed to webview.start() below (its `func` argument) rather
+            # than run on a plain thread started here: pywebview only
+            # guarantees window.load_url() is safe to call once its own GUI
+            # loop is actually running, and `func` is exactly the hook it
+            # offers for "do this right after the loop starts," on a thread
+            # it manages itself — a thread we started by hand could win the
+            # race and call load_url() before that loop exists yet.
+            ready_event.wait()
+            try:
+                window.load_url(url)
+            except Exception:
+                log.exception("Impossible de basculer la fenêtre vers l'application une fois le serveur prêt")
 
         # On Windows, pywebview's EdgeChromium (WebView2) backend relies on
         # pythonnet/COM under the hood, and `webview.start()` returning when
@@ -237,7 +290,7 @@ def main() -> None:
 
         window.events.closed += _on_closed
 
-        webview.start()
+        webview.start(_switch_to_app_once_ready)
         # Reached only if `start()` itself returns (e.g. on Linux/GTK, or if
         # pywebview's own loop exits cleanly) rather than the `closed` event
         # firing first — fall through to the same forced exit below instead
@@ -247,6 +300,10 @@ def main() -> None:
         _safe_print("Fenêtre native indisponible, ouverture dans le navigateur par défaut.")
         import webbrowser
 
+        # No loading page to show in a plain browser tab, so wait for the
+        # server to actually answer first — opening it right away would
+        # just show a connection error during the cold start.
+        ready_event.wait()
         webbrowser.open(url)
         # No native window to wait on in this fallback: keep the process
         # (and therefore the local server, if this process is the one
