@@ -22,9 +22,13 @@ const TABS: { id: Tab; label: (counts: { anomalies: number; missing: number }) =
 interface Props {
   detail: ImportBatchDetail;
   onAction: () => void; // refresh parent list after reanalyze/reject
+  // Switches the page to the original import a "déjà traité" entry
+  // duplicates (see summary.duplicate_of_id) — undefined when the caller
+  // doesn't support it, in which case the button to do so isn't shown.
+  onOpenOriginal?: (batchId: string) => void;
 }
 
-export default function DetailedAnalysis({ detail, onAction }: Props) {
+export default function DetailedAnalysis({ detail, onAction, onOpenOriginal }: Props) {
   const navigate = useNavigate();
   const { summary, meters } = detail;
   const [tab, setTab] = useState<Tab>("graphique");
@@ -124,12 +128,19 @@ export default function DetailedAnalysis({ detail, onAction }: Props) {
           </p>
           <p className="max-w-md text-sm text-gray-500">
             {summary.status === "deja_traite"
-              ? "Son contenu est identique à un fichier déjà importé précédemment : pour éviter les doublons, il n'a pas été réimporté. Les données existent déjà en base sous le premier import."
+              ? `Son contenu est identique à un fichier déjà importé précédemment${
+                  summary.duplicate_of_name ? ` (« ${summary.duplicate_of_name} »)` : ""
+                } : pour éviter les doublons, il n'a pas été réimporté. Les données existent déjà en base sous le premier import.`
               : "Aucun relevé n'a été associé à ce dossier — vérifiez le fichier source ou réessayez l'import."}
           </p>
         </div>
         <div className="border-t border-gray-100 bg-gray-50 px-6 py-4">
           <div className="flex justify-end gap-2">
+            {summary.status === "deja_traite" && summary.duplicate_of_id && onOpenOriginal && (
+              <ActionButton onClick={() => onOpenOriginal(summary.duplicate_of_id!)} busy={false} variant="ghost">
+                Ouvrir l'import original →
+              </ActionButton>
+            )}
             <ActionButton onClick={() => handle("reject")} busy={busy === "reject"} variant="danger">
               Retirer de la liste
             </ActionButton>

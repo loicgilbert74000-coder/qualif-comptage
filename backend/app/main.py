@@ -104,6 +104,10 @@ def on_startup():
             connection.execute(text(
                 "ALTER TABLE import_batches ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE"
             ))
+    if "duplicate_of_id" not in batch_columns:
+        with engine.begin() as connection:
+            uuid_col_type = "UUID" if engine.dialect.name == "postgresql" else "CHAR(36)"
+            connection.execute(text(f"ALTER TABLE import_batches ADD COLUMN duplicate_of_id {uuid_col_type}"))
 
     meter_columns = {column["name"] for column in inspect(engine).get_columns("meters")}
     if "status" not in meter_columns:

@@ -347,7 +347,9 @@ export default function QualificationPage() {
             )}
           </section>
 
-          {detail && <DetailedAnalysis detail={detail} onAction={refreshActive} />}
+          {detail && (
+            <DetailedAnalysis detail={detail} onAction={refreshActive} onOpenOriginal={(id) => setActiveId(id)} />
+          )}
         </div>
       </div>
     </div>

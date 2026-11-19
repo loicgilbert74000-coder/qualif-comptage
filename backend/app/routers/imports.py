@@ -56,7 +56,13 @@ def _batch_summary(db: Session, batch: ImportBatch) -> ImportBatchSummary:
     qualified = (
         db.query(MeterValidation.meter_id).filter(MeterValidation.import_batch_id == batch.id).distinct().count()
     )
-    return ImportBatchSummary.model_validate(batch).model_copy(update={"qualified_meter_count": qualified})
+    update = {"qualified_meter_count": qualified}
+    if batch.duplicate_of_id is not None:
+        # Looked up by name rather than stored redundantly on this row, so
+        # a later rename of the original import is reflected here too.
+        original = db.query(ImportBatch).get(batch.duplicate_of_id)
+        update["duplicate_of_name"] = original.name if original is not None else None
+    return ImportBatchSummary.model_validate(batch).model_copy(update=update)
 
 
 @router.post("", response_model=ImportBatchSummary)

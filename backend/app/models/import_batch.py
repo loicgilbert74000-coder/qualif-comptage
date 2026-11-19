@@ -59,6 +59,14 @@ class ImportBatch(Base):
     # meter_validations gardent vers ce dossier.
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
+    # Set only on a status == DEJA_TRAITE row (see ingest_files): the id of
+    # the earlier import this one's content exactly matches. That earlier
+    # import is where the actual readings live — this row never got any of
+    # its own — so the import screen uses this to offer "ouvrir l'import
+    # original" instead of a dead end. No ON DELETE behaviour relies on it:
+    # the batch it points to is never hard-deleted, only archived.
+    duplicate_of_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+
     anomalies: Mapped[list["Anomaly"]] = relationship(back_populates="import_batch", cascade="all, delete-orphan")
     readings: Mapped[list["Reading"]] = relationship(back_populates="import_batch", cascade="all, delete-orphan")
     history_entries: Mapped[list["ProcessingHistory"]] = relationship(

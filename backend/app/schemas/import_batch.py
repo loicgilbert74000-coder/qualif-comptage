@@ -20,6 +20,12 @@ class ImportBatchSummary(BaseModel):
     # (saved) — lets the export pages offer a dossier as soon as it has at
     # least one, instead of waiting for the whole dossier to be finished.
     qualified_meter_count: int = 0
+    # Set only on a status == "deja_traite" entry: the id (and display name)
+    # of the earlier import whose content this one is an exact duplicate
+    # of — lets the import screen offer "ouvrir l'import original" instead
+    # of a dead end, since this entry itself was never given any readings.
+    duplicate_of_id: UUID | None = None
+    duplicate_of_name: str | None = None
 
     class Config:
         from_attributes = True

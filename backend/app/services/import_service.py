@@ -377,6 +377,7 @@ def ingest_files(
             decimal_separator=decimal_separator,
             status=ImportStatus.DEJA_TRAITE,
             content_hash=content_hash,
+            duplicate_of_id=duplicate_of.id,
             building_count=duplicate_of.building_count,
             meter_count=duplicate_of.meter_count,
             period_start=duplicate_of.period_start,

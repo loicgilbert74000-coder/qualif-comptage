@@ -20,6 +20,11 @@ export interface ImportBatchSummary {
    * (saved) — a dossier can be partly exportable before its overall
    * status reaches "valide". */
   qualified_meter_count: number;
+  /** Set only when status is "deja_traite": the id/name of the earlier
+   * import whose content this entry exactly duplicates — that's where its
+   * actual readings live, since this entry was never given any of its own. */
+  duplicate_of_id: string | null;
+  duplicate_of_name: string | null;
 }
 
 export interface ImportPreviewMeter {
