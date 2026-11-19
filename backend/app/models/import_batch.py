@@ -2,7 +2,7 @@ import uuid
 import enum
 from datetime import datetime, date
 
-from sqlalchemy import String, DateTime, Date, Float, Integer, JSON, Enum
+from sqlalchemy import String, DateTime, Date, Float, Integer, JSON, Enum, Boolean
 from app.db_types import GUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -50,6 +50,14 @@ class ImportBatch(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # "Supprimer" dans la page d'import ne retire que l'entrée de la liste
+    # (et le fichier brut sur disque) — les relevés déjà enregistrés restent
+    # en base, qualifiés ou non : voir delete_batch(). Ce champ, plutôt
+    # qu'une vraie suppression de la ligne, est ce qui permet de la masquer
+    # sans casser la clé étrangère NOT NULL que readings/anomalies/
+    # meter_validations gardent vers ce dossier.
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     anomalies: Mapped[list["Anomaly"]] = relationship(back_populates="import_batch", cascade="all, delete-orphan")
     readings: Mapped[list["Reading"]] = relationship(back_populates="import_batch", cascade="all, delete-orphan")

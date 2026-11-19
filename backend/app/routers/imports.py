@@ -147,7 +147,14 @@ async def preview_import(
 
 @router.get("", response_model=list[ImportBatchSummary])
 def list_imports(db: Session = Depends(get_db)):
-    batches = db.query(ImportBatch).order_by(ImportBatch.created_at.desc()).all()
+    # "Supprimer" (delete_batch) never removes an import's data any more —
+    # it only archives the entry so it stops cluttering this list.
+    batches = (
+        db.query(ImportBatch)
+        .filter(ImportBatch.archived.is_(False))
+        .order_by(ImportBatch.created_at.desc())
+        .all()
+    )
     return [_batch_summary(db, b) for b in batches]
 
 

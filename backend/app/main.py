@@ -99,6 +99,11 @@ def on_startup():
     if "content_hash" not in batch_columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE import_batches ADD COLUMN content_hash VARCHAR(64)"))
+    if "archived" not in batch_columns:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "ALTER TABLE import_batches ADD COLUMN archived BOOLEAN NOT NULL DEFAULT FALSE"
+            ))
 
     meter_columns = {column["name"] for column in inspect(engine).get_columns("meters")}
     if "status" not in meter_columns:

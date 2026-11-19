@@ -1320,21 +1320,17 @@ def export_rows(db: Session, batch: ImportBatch) -> list[dict]:
 
 
 def delete_batch(db: Session, batch: ImportBatch) -> None:
-    """Remove an import entry entirely (used from the "trop de fichiers"
-    clean-up in the import panel). Its readings, anomalies, history and
-    meter-validation rows are removed with it; a meter/building this batch
-    created is kept only if something else still justifies it — another
-    batch's readings, or a past qualification — and deleted otherwise (see
-    _cleanup_orphaned_meters). The raw file(s) kept on disk are deleted
-    too."""
+    """Remove an import entry from the import panel's list (used from its
+    "trop de fichiers" clean-up) — this is bookkeeping about the upload,
+    not the readings it produced. Readings, anomalies, history and
+    meter-validation rows that already made it into the database are never
+    touched here, qualified or not: only the raw file(s) kept on disk are
+    deleted, and the batch row itself is archived (hidden from the list)
+    rather than deleted outright, since Reading/Anomaly/MeterValidation
+    keep a NOT NULL foreign key pointing at it."""
     storage_path = Path(batch.storage_path) if batch.storage_path else None
-    meter_ids = {
-        row[0] for row in db.query(Reading.meter_id).filter(Reading.import_batch_id == batch.id).distinct()
-    }
-    db.delete(batch)
+    batch.archived = True
     db.commit()
-    if meter_ids:
-        _cleanup_orphaned_meters(db, meter_ids)
     if storage_path and storage_path.exists():
         try:
             if storage_path.is_dir():
@@ -1343,37 +1339,3 @@ def delete_batch(db: Session, batch: ImportBatch) -> None:
                 storage_path.unlink()
         except OSError:
             pass
-
-
-def _cleanup_orphaned_meters(db: Session, meter_ids: set) -> None:
-    """A Meter/Building is created the moment its code is first seen in an
-    import, before anyone has reviewed or qualified anything — so when the
-    import that created it is later deleted (or every batch that ever fed
-    it is), and it was never actually qualified, nothing justifies it
-    staying in the database any more: it shows up in "Bâtiments et
-    compteurs" as a building/meter with no real data behind it. Deletes
-    only meters that are BOTH out of readings (no batch references them any
-    more) AND were never qualified (no MeterValidation row survives,
-    whichever batch it came from) — a meter that was validated once keeps
-    its history even if its original import batch is later removed."""
-    orphaned_building_ids: set = set()
-    for meter_id in meter_ids:
-        meter = db.query(Meter).get(meter_id)
-        if meter is None:
-            continue
-        has_readings = db.query(Reading.id).filter(Reading.meter_id == meter_id).first() is not None
-        if has_readings:
-            continue
-        has_validation = db.query(MeterValidation.id).filter(MeterValidation.meter_id == meter_id).first() is not None
-        if has_validation:
-            continue
-        orphaned_building_ids.add(meter.building_id)
-        db.delete(meter)
-    db.commit()
-    for building_id in orphaned_building_ids:
-        has_meters = db.query(Meter.id).filter(Meter.building_id == building_id).first() is not None
-        if not has_meters:
-            building = db.query(Building).get(building_id)
-            if building is not None:
-                db.delete(building)
-    db.commit()

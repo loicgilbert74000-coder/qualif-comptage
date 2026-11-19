@@ -3,12 +3,9 @@ import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 import { useQualifAI } from "../context/QualifAIContext";
 
-// Pas d'entrée de menu pour "Traitements & reconstructions" : cette étape
-// se déclenche depuis le flux de qualification (après validation du
-// fichier à l'étape 1), pas depuis un lien permanent de la barre latérale.
-// La route /traitements reste active, seule l'entrée de menu disparaît.
 const NAV_ITEMS = [
   { to: "/", label: "Qualification des données", icon: IconChart },
+  { to: "/traitements", label: "Traitement", icon: IconProcess },
   { to: "/historique", label: "Historique des traitements", icon: IconClock },
   { to: "/exports", label: "Gestion des exports", icon: IconDownload },
   { to: "/batiments", label: "Bâtiments & compteurs", icon: IconBuilding },
@@ -152,6 +149,14 @@ function IconChart({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className}>
       <path d="M4 19V5M4 19h16M8 15v-4M12 15V8m4 7v-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconProcess({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className}>
+      <path d="M4 7h11.5M4 7l3-3M4 7l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M20 17H8.5M20 17l-3-3M20 17l-3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
