@@ -1098,7 +1098,20 @@ def correction_options_for_anomaly(db: Session, anomaly: Anomaly) -> list[dict]:
             "confidence_pct": score,
             "confidence_gain_pct": gain,
             "model_fit_pct": result.model_fit_pct,
-            "eligible": covered and gain > 0,
+            # `gain` is the move in the WHOLE series' score from fixing just
+            # this one zone — on a series with many other flagged points
+            # (very common once several zones still await treatment), a
+            # handful of corrected points barely moves that global number,
+            # so gain can land at 0.0 or even slightly negative for a
+            # correction that is obviously right for this zone (e.g.
+            # replacing a single absurd 500 kWh spike with ~5 kWh). Gating
+            # eligibility on a positive GLOBAL gain made every such
+            # textbook correction look non-eligible and refused by
+            # resolve_anomaly, with the zone silently staying unresolved —
+            # `covered` alone (this method actually produced a value for
+            # every point this zone needs) is the real correctness gate;
+            # `gain` stays purely for ranking candidates against each other.
+            "eligible": covered,
             "confidence_basis": "Indice de cohérence global de la série, recalculé avec les critères actifs; ce n’est pas une probabilité statistique.",
             "_order": order,
         })
